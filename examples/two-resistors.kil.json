@@ -1,0 +1,53 @@
+{
+  "format_version": 1,
+  "project": {
+    "name": "two-resistors",
+    "title": "KiCad IL v1 smoke test",
+    "kicad": 10
+  },
+  "units": "mm",
+  "components": {
+    "R1": {
+      "symbol": "Device:R",
+      "value": "10k",
+      "footprint": "Resistor_SMD:R_0603_1608Metric"
+    },
+    "R2": {
+      "symbol": "Device:R",
+      "value": "20k",
+      "footprint": "Resistor_SMD:R_0603_1608Metric"
+    }
+  },
+  "nets": {
+    "SIGNAL": ["R1.1", "R2.1"],
+    "GND": ["R1.2", "R2.2"]
+  },
+  "schematic": {
+    "placement": {
+      "R1": { "at": [50.8, 50.8] },
+      "R2": { "at": [63.5, 50.8] }
+    }
+  },
+  "pcb": {
+    "outline": [[0, 0], [12, 0], [12, 14], [0, 14]],
+    "placement": {
+      "R1": { "at": [5, 5] },
+      "R2": { "at": [5, 9] }
+    },
+    "routes": {
+      "SIGNAL": [{ "layer": "F.Cu", "path": [[4.175, 5], [4.175, 9]] }],
+      "GND": [
+        { "layer": "F.Cu", "path": [[5.825, 5], [5.825, 7]] },
+        { "layer": "F.Cu", "path": [[5.825, 7], [5.825, 9]] }
+      ]
+    },
+    "vias": [{ "net": "GND", "at": [5.825, 7] }],
+    "zones": [{
+      "net": "GND",
+      "layer": "B.Cu",
+      "outline": [[0.5, 0.5], [11.5, 0.5], [11.5, 13.5], [0.5, 13.5]]
+    }],
+    "holes": [{ "at": [10, 12], "diameter": 2.5 }],
+    "silk": [{ "text": "KIL v1", "at": [9, 2] }]
+  }
+}

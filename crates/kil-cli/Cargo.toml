@@ -1,0 +1,17 @@
+[package]
+name = "kil"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+kil-core = { path = "../kil-core" }
+serde_json.workspace = true
+
+[[bin]]
+name = "kil"
+path = "src/main.rs"
+

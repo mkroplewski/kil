@@ -1,0 +1,37 @@
+{
+  "format_version": 1,
+  "project": { "name": "rc-led", "title": "RC and LED golden", "kicad": 10 },
+  "units": "mm",
+  "components": {
+    "R1": { "symbol": "Device:R", "value": "1k", "footprint": "Resistor_SMD:R_0603_1608Metric" },
+    "C1": { "symbol": "Device:C", "value": "100n", "footprint": "Capacitor_SMD:C_0603_1608Metric" },
+    "D1": { "symbol": "Device:LED", "value": "GREEN", "footprint": "Resistor_SMD:R_0603_1608Metric" }
+  },
+  "nets": {
+    "DRIVE": ["R1.1", "D1.1"],
+    "RETURN": ["R1.2", "C1.2"],
+    "SENSE": ["D1.2", "C1.1"]
+  },
+  "schematic": {
+    "placement": {
+      "R1": { "at": [50.8, 45.72] },
+      "D1": { "at": [63.5, 45.72] },
+      "C1": { "at": [63.5, 55.88], "rotation": 90 }
+    }
+  },
+  "pcb": {
+    "outline": [[0, 0], [18, 0], [18, 14], [0, 14]],
+    "placement": {
+      "R1": { "at": [5, 4] },
+      "D1": { "at": [5, 9] },
+      "C1": { "at": [13, 6.5], "rotation": 90 }
+    },
+    "routes": {
+      "DRIVE": [{ "layer": "F.Cu", "path": [[4.175, 4], [4.175, 9]] }],
+      "RETURN": [{ "layer": "F.Cu", "path": [[5.825, 4], [10, 4], [10, 5.675], [13, 5.675]] }],
+      "SENSE": [{ "layer": "B.Cu", "path": [[5.825, 9], [11, 9], [11, 7.325], [13, 7.325]] }]
+    },
+    "vias": [{ "net": "SENSE", "at": [11, 9] }],
+    "silk": [{ "text": "RC / LED", "at": [9, 12] }]
+  }
+}
