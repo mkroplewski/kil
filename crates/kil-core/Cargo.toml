@@ -4,6 +4,12 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Core compiler for the KiCad Intent Language"
+readme = "../../README.md"
+keywords = ["kicad", "eda", "pcb", "schematic"]
+categories = ["development-tools"]
 
 [dependencies]
 indexmap.workspace = true

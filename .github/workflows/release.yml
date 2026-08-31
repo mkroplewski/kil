@@ -1,0 +1,108 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            executable: kil.exe
+            archive: kil-x86_64-pc-windows-msvc.zip
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            executable: kil
+            archive: kil-x86_64-unknown-linux-gnu.tar.gz
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            executable: kil
+            archive: kil-x86_64-apple-darwin.tar.gz
+          - os: macos-15
+            target: aarch64-apple-darwin
+            executable: kil
+            archive: kil-aarch64-apple-darwin.tar.gz
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Rust 1.90
+        shell: pwsh
+        run: rustup toolchain install 1.90.0 --profile minimal --target ${{ matrix.target }}
+
+      - name: Build release binary
+        shell: pwsh
+        run: cargo +1.90.0 build --locked --release --target ${{ matrix.target }} -p kil
+
+      - name: Download bundled KiCadRoutingTools
+        shell: pwsh
+        run: |
+          $krtVersion = (Get-Content KRT_VERSION -Raw).Trim()
+          git clone --depth 1 --branch $krtVersion https://github.com/drandyhaas/KiCadRoutingTools.git krt-source
+          python -m pip install --disable-pip-version-check --quiet numpy
+          python krt-source/build_router.py --tag $krtVersion
+
+      - name: Package binary
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path payload/krt/rust_router -Force | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.executable }}" "payload/${{ matrix.executable }}"
+          Copy-Item krt-source/py_router payload/krt/py_router -Recurse
+          Copy-Item krt-source/rust_router/Cargo.toml payload/krt/rust_router/Cargo.toml
+          Copy-Item krt-source/LICENSE payload/krt/LICENSE
+          Copy-Item krt-source/VERSION payload/krt/VERSION
+          Copy-Item krt-source/requirements.txt payload/krt/requirements.txt
+          if ("${{ runner.os }}" -eq "Windows") {
+            Copy-Item krt-source/rust_router/grid_router.pyd payload/krt/rust_router/grid_router.pyd
+          } else {
+            Copy-Item krt-source/rust_router/grid_router.so payload/krt/rust_router/grid_router.so
+          }
+          if ("${{ matrix.archive }}".EndsWith(".zip")) {
+            Compress-Archive -Path "payload/*" -DestinationPath "${{ matrix.archive }}"
+          } else {
+            tar -czf "${{ matrix.archive }}" -C payload .
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: ${{ matrix.archive }}
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create checksums
+        working-directory: dist
+        run: sha256sum kil-* > SHA256SUMS
+
+      - name: Publish assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
+          fi

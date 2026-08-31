@@ -4,14 +4,19 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Compiler for the KiCad Intent Language"
+readme = "../../README.md"
+keywords = ["kicad", "eda", "pcb", "schematic", "cli"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
-kil-core = { path = "../kil-core" }
+kil-core = { version = "0.1.0", path = "../kil-core" }
 serde_json.workspace = true
 
 [[bin]]
 name = "kil"
 path = "src/main.rs"
-

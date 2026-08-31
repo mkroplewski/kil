@@ -1,6 +1,6 @@
 # kil
 
-`kil` compiles a compact JSON description of a circuit into a KiCad 10 project.
+`kil`, the KiCad Intent Language, compiles a compact JSON description of a circuit into a KiCad 10 project.
 
 The JSON file is the source of truth. Agents and humans edit `*.kil.json`; `kil` regenerates `.kicad_pro`, `.kicad_sch`, and `.kicad_pcb` files. This avoids asking a language model to patch large KiCad S-expressions without breaking references, UUIDs, or file structure.
 
@@ -72,16 +72,33 @@ See [examples/two-resistors.kil.json](examples/two-resistors.kil.json) for a com
 
 ## Requirements
 
-- Rust 1.90 or newer
 - KiCad 10 with `kicad-cli`
 - the KiCad symbol and footprint libraries used by the input file
-- Python 3.9 or newer and KiCadRoutingTools only when using `kil route`
+- Python 3.9 or newer when using the bundled autorouter
 
 The current implementation is developed and tested on Windows. The Rust code is intended to be portable, but other operating systems are not yet covered by CI.
 
-## Install from source
+## Install
 
-Clone the repository, then install the CLI from the workspace root:
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/mkroplewski/kil/main/install.ps1 | iex
+```
+
+Linux and macOS:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mkroplewski/kil/main/install.sh | sh
+```
+
+The installer downloads the correct release for the current platform, verifies its SHA-256 checksum, and installs `kil` for the current user. It also installs KiCadRoutingTools 0.21.4 and its Python packages in a private environment. Open a new terminal after installation.
+
+Prebuilt releases cover Windows x86-64, Linux x86-64, macOS Intel, and macOS Apple Silicon. KiCad itself remains a system dependency.
+
+### Install from source
+
+Building from source requires Rust 1.90 or newer. Clone the repository, then run:
 
 ```console
 cargo install --path crates/kil-cli
@@ -179,13 +196,12 @@ The complete example is in [examples/modular-resistors](examples/modular-resisto
 
 ## Automatic routing
 
-The optional routing adapter uses [KiCadRoutingTools](https://github.com/drandyhaas/KiCadRoutingTools). It does not make native KiCad files authoritative. The router receives a temporary generated board, and `kil` converts its result into a compact `*.kil.routes.json` cache.
+The release archive includes [KiCadRoutingTools](https://github.com/drandyhaas/KiCadRoutingTools). It does not make native KiCad files authoritative. The router receives a temporary generated board, and `kil` converts its result into a compact `*.kil.routes.json` cache.
 
-Build KiCadRoutingTools according to its own instructions, then run:
+After the normal `kil` installation, routing needs no separate setup:
 
 ```console
-python C:/tools/KiCadRoutingTools/build_router.py
-kil route examples/tiny-controller.kil.json --krt C:/tools/KiCadRoutingTools
+kil route examples/tiny-controller.kil.json
 kil build examples/tiny-controller.kil.json
 ```
 
@@ -194,13 +210,15 @@ The cache contains normalized segments, vias, the router version when available,
 Route selected nets or one imported block instead of rerouting everything:
 
 ```console
-kil route board.kil.json --krt C:/tools/KiCadRoutingTools --net "/USB_*"
-kil route board.kil.json --krt C:/tools/KiCadRoutingTools --block controller
+kil route board.kil.json --net "/USB_*"
+kil route board.kil.json --block controller
 ```
 
 There is one important boundary. A mapped net such as global `GND` belongs to the whole board. Selecting a block that uses `GND` can therefore expose the complete `GND` net to the router. Lock finished copper when routing blocks incrementally.
 
-KiCadRoutingTools remains an external dependency. Its current limitations include no push-and-shove, no blind or buried vias, no coarse global-routing pass, and no region-specific design rules. For larger boards, route by block or net group and review each result in KiCad.
+The release pins KiCadRoutingTools through [KRT_VERSION](KRT_VERSION). Its MIT license is included in every binary archive. See [THIRD_PARTY.md](THIRD_PARTY.md) for the bundled files and attribution. `--krt` and `--python` can override the bundled copies during development.
+
+KiCadRoutingTools currently has no push-and-shove, blind or buried vias, coarse global-routing pass, or region-specific design rules. For larger boards, route by block or net group and review each result in KiCad.
 
 ## Current scope
 
@@ -232,6 +250,8 @@ The workspace contains two crates:
 
 The test suite includes deterministic golden generation, source-span diagnostics, stale route-cache rejection, module transforms, rollback after failed publication, and a 50-part size and compile-time fixture.
 
+Pushing a tag such as `v0.1.0` starts [.github/workflows/release.yml](.github/workflows/release.yml). The workflow builds all supported binaries, bundles the pinned router, generates `SHA256SUMS`, and publishes the GitHub Release used by both installers.
+
 ## License
 
-Licensed under either Apache-2.0 or MIT, at your option.
+Licensed under the [MIT License](LICENSE).

@@ -322,18 +322,19 @@ pub fn route(options: &RouteOptions) -> RouteOutcome {
                 "KiCadRoutingTools route.py was not found",
                 &options.input,
             )
-            .with_help("clone KiCadRoutingTools and pass --krt PATH"),
+            .with_help("reinstall kil, or pass --krt PATH to a KiCadRoutingTools checkout"),
         );
         return invalid_route(diagnostics, loaded.source);
     };
-    let python = options
-        .python
-        .clone()
-        .unwrap_or_else(|| PathBuf::from("python"));
+    let python = resolve_python(options.python.as_deref());
     if !python_works(&python) {
         diagnostics.push(
-            Diagnostic::error("ROUTE009", "Python 3.9+ was not found", &options.input)
-                .with_help("pass --python PATH to a Python installation with numpy/scipy/shapely"),
+            Diagnostic::error(
+                "ROUTE009",
+                "Python 3.9+ with numpy, scipy and shapely was not found",
+                &options.input,
+            )
+            .with_help("reinstall kil, or pass --python PATH to a compatible Python environment"),
         );
         return invalid_route(diagnostics, loaded.source);
     }
@@ -928,7 +929,8 @@ fn resolve_kicad_cli(explicit: Option<&Path>) -> Option<PathBuf> {
 fn resolve_krt(explicit: Option<&Path>) -> Option<PathBuf> {
     let candidate = explicit
         .map(Path::to_path_buf)
-        .or_else(|| std::env::var_os("KICAD_ROUTING_TOOLS").map(PathBuf::from))?;
+        .or_else(|| std::env::var_os("KICAD_ROUTING_TOOLS").map(PathBuf::from))
+        .or_else(|| bundled_root().map(|root| root.join("lib").join("krt")))?;
     if candidate.is_file() {
         return candidate
             .file_name()
@@ -939,10 +941,47 @@ fn resolve_krt(explicit: Option<&Path>) -> Option<PathBuf> {
     script.is_file().then_some(script)
 }
 
+fn resolve_python(explicit: Option<&Path>) -> PathBuf {
+    if let Some(path) = explicit {
+        return path.to_path_buf();
+    }
+    if let Some(root) = bundled_root() {
+        #[cfg(target_os = "windows")]
+        let bundled = root.join("python").join("Scripts").join("python.exe");
+        #[cfg(not(target_os = "windows"))]
+        let bundled = root.join("python").join("bin").join("python");
+        if bundled.is_file() {
+            return bundled;
+        }
+    }
+    if command_works_with("python3", &["--version"]) {
+        PathBuf::from("python3")
+    } else {
+        PathBuf::from("python")
+    }
+}
+
+fn bundled_root() -> Option<PathBuf> {
+    std::env::current_exe()
+        .ok()?
+        .parent()?
+        .parent()
+        .map(Path::to_path_buf)
+}
+
 fn python_works(program: &Path) -> bool {
     Command::new(program)
         .arg("-c")
-        .arg("import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)")
+        .arg(
+            "import sys, numpy, scipy, shapely; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)",
+        )
+        .output()
+        .is_ok_and(|result| result.status.success())
+}
+
+fn command_works_with(program: impl AsRef<OsStr>, args: &[&str]) -> bool {
+    Command::new(program)
+        .args(args)
         .output()
         .is_ok_and(|result| result.status.success())
 }

@@ -7,7 +7,11 @@ use kil_core::{
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
-#[command(name = "kil", version, about = "Safe, deterministic KiCad IL compiler")]
+#[command(
+    name = "kil",
+    version,
+    about = "Compiler for the KiCad Intent Language"
+)]
 struct Cli {
     #[arg(long, value_enum, default_value_t = OutputFormat::Text, global = true)]
     diagnostics: OutputFormat,
@@ -36,10 +40,10 @@ enum Commands {
     /// Route a staged board with KiCadRoutingTools and publish a safe route cache.
     Route {
         file: PathBuf,
-        /// KiCadRoutingTools repository root or py_router/route.py.
+        /// Override the bundled KiCadRoutingTools root or py_router/route.py.
         #[arg(long)]
         krt: Option<PathBuf>,
-        /// Python 3.9+ executable used to run KiCadRoutingTools.
+        /// Override the bundled Python environment used by KiCadRoutingTools.
         #[arg(long)]
         python: Option<PathBuf>,
         /// Override pcb.routing.nets; repeat for multiple patterns.
