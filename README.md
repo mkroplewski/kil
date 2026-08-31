@@ -1,59 +1,237 @@
 # kil
 
-`kil` is a small, deterministic compiler from an agent-editable KiCad IL (`*.kil.json`) to KiCad 10 projects. The IL is the source of truth; generated `.kicad_pro`, `.kicad_sch`, and `.kicad_pcb` files are replaceable artifacts and must not be edited by agents.
+`kil` compiles a compact JSON description of a circuit into a KiCad 10 project.
+
+The JSON file is the source of truth. Agents and humans edit `*.kil.json`; `kil` regenerates `.kicad_pro`, `.kicad_sch`, and `.kicad_pcb` files. This avoids asking a language model to patch large KiCad S-expressions without breaking references, UUIDs, or file structure.
+
+> [!WARNING]
+> `kil` is experimental. It currently targets new, single-sheet, two-layer designs. Do not use it as the only copy of a production design until the format and compiler have seen more real-world testing.
+
+## Why another circuit format?
+
+Native KiCad files are good application files, but poor editing targets for an agent. They contain repeated geometry, generated identifiers, library data, and ordering details that consume context without describing design intent.
+
+`kil` keeps the editable representation small:
+
+- components and nets are declared once;
+- connections use endpoints such as `U1.3` or `U1.VCC`;
+- PCB geometry uses local millimetres and explicit polylines;
+- reusable blocks live in separate JSON files;
+- UUID v5 values and KiCad boilerplate are generated deterministically;
+- invalid input produces structured diagnostics before generated files replace a working build.
+
+This is a file format and CLI, not an editing server. Any editor, script, agent, or version-control workflow can modify the JSON.
+
+## Example
+
+```json
+{
+  "format_version": 1,
+  "project": { "name": "divider", "kicad": 10 },
+  "units": "mm",
+  "components": {
+    "R1": {
+      "symbol": "Device:R",
+      "value": "10k",
+      "footprint": "Resistor_SMD:R_0603_1608Metric"
+    },
+    "R2": {
+      "symbol": "Device:R",
+      "value": "20k",
+      "footprint": "Resistor_SMD:R_0603_1608Metric"
+    }
+  },
+  "nets": {
+    "SIGNAL": ["R1.1", "R2.1"],
+    "GND": ["R1.2", "R2.2"]
+  },
+  "schematic": {
+    "placement": {
+      "R1": { "at": [50.8, 50.8] },
+      "R2": { "at": [63.5, 50.8] }
+    }
+  },
+  "pcb": {
+    "outline": [[0, 0], [12, 0], [12, 14], [0, 14]],
+    "placement": {
+      "R1": { "at": [5, 5] },
+      "R2": { "at": [5, 9] }
+    },
+    "routes": {
+      "SIGNAL": [
+        { "layer": "F.Cu", "path": [[4.175, 5], [4.175, 9]] }
+      ]
+    }
+  }
+}
+```
+
+PCB coordinates start at the lower-left corner of the board. `+X` points right, `+Y` points up, distances use millimetres, and positive rotations are counter-clockwise.
+
+See [examples/two-resistors.kil.json](examples/two-resistors.kil.json) for a complete small board and [examples/tiny-controller.kil.json](examples/tiny-controller.kil.json) for a larger example with routing policy, a copper zone, vias, holes, and silkscreen.
+
+## Requirements
+
+- Rust 1.90 or newer
+- KiCad 10 with `kicad-cli`
+- the KiCad symbol and footprint libraries used by the input file
+- Python 3.9 or newer and KiCadRoutingTools only when using `kil route`
+
+The current implementation is developed and tested on Windows. The Rust code is intended to be portable, but other operating systems are not yet covered by CI.
+
+## Install from source
+
+Clone the repository, then install the CLI from the workspace root:
+
+```console
+cargo install --path crates/kil-cli
+```
+
+You can also run commands without installing the binary:
+
+```console
+cargo run -p kil -- --help
+```
 
 ## Quick start
 
-```powershell
-cargo run -p kil -- schema
-cargo run -p kil -- schema --module
-cargo run -p kil -- inspect examples/modular-resistors/project.kil.json --block divider
-cargo run -p kil -- check examples/rc-led.kil.json
-cargo run -p kil -- build examples/two-resistors.kil.json
+Validate an input without publishing generated files:
+
+```console
+kil check examples/rc-led.kil.json
 ```
 
-The default output is `build/kicad/<project>/` next to the input IL file. KiCad library identifiers are resolved from project/global library tables and the standard KiCad 10 installation. Override discovery with `--kicad-cli PATH`.
+Build a KiCad project:
 
-## CLI contract
+```console
+kil build examples/two-resistors.kil.json
+```
 
-- `kil check FILE` resolves libraries, generates into a temporary directory and runs KiCad netlist/ERC/DRC validation without publishing files.
-- `kil build FILE [--out DIR]` performs the same checks and publishes a structurally valid project with rollback protection.
-- `kil route FILE --krt PATH` routes a temporary board with KiCadRoutingTools, validates the result and atomically publishes only a normalized `*.kil.routes.json` cache.
-- `kil inspect FILE [--component REF | --net NET | --block ID | --region X1 Y1 X2 Y2]` prints a compact read-only JSON slice, so an agent need not load the whole project.
-- `kil schema` prints the root-project JSON Schema; `kil schema --module` prints the imported-module schema.
-- `--diagnostics text|json` controls diagnostic output.
-- Exit `0` means success or warnings only, `1` means invalid IL/generation, and `2` means valid generated files with ERC/DRC errors.
+By default, the output goes to `build/kicad/<project>/` beside the input file. Use `--out DIR` to choose another directory. If `kicad-cli` is not on `PATH`, pass it explicitly:
 
-## v1 format
+```console
+kil --kicad-cli "C:/Program Files/KiCad/10.0/bin/kicad-cli.exe" check board.kil.json
+```
 
-The schema is intentionally normalized: components and nets are declared once, while schematic and PCB sections carry only view/layout geometry. PCB coordinates are local millimetres with the origin at the lower-left, +X right and +Y up. Component references and `REF.PIN` endpoints replace native UUIDs; the compiler derives stable UUID v5 values.
+Generated KiCad files are disposable build artifacts. Manual changes to them disappear on the next build.
 
-V1 supports one schematic sheet, library symbols/footprints, two copper layers, polygon outlines, placements, traces, vias, zones, holes, silkscreen text and recursively imported layout modules. Round-trip editing, electrical sheet hierarchy, buses, derived/multi-unit symbols and inner layers remain outside v1.
+## Commands
 
-The `examples/` directory includes a compact RC/LED circuit, a small ATtiny board and `modular-resistors`, which demonstrates a reusable local-coordinate block.
+| Command | What it does |
+| --- | --- |
+| `kil check FILE` | Parses and validates the IL, resolves KiCad libraries, generates into a temporary directory, then runs KiCad netlist, ERC, and DRC checks. |
+| `kil build FILE [--out DIR]` | Runs the same checks and atomically publishes a structurally valid KiCad project. |
+| `kil inspect FILE` | Prints a compact JSON summary without resolving libraries or starting KiCad. |
+| `kil inspect FILE --component U1` | Prints one component, its placements, and connected nets. |
+| `kil inspect FILE --net GND` | Prints endpoints and geometry for one net. |
+| `kil inspect FILE --block power` | Prints one imported block. |
+| `kil inspect FILE --region X1 Y1 X2 Y2` | Prints PCB objects with a recorded point inside a rectangular area. |
+| `kil schema` | Prints the root project JSON Schema. |
+| `kil schema --module` | Prints the module JSON Schema. |
+| `kil route FILE --krt PATH` | Runs KiCadRoutingTools on a staged board and writes normalized copper back to a route cache. |
 
-## Modules and large projects
+All commands accept `--diagnostics text|json`. JSON diagnostics have stable fields for `severity`, `code`, `message`, `file`, `span`, `path`, `related`, and `help`.
 
-A root `*.kil.json` may import strict-JSON module files. Each import has a stable instance `id`, a project-relative `path`, explicit schematic/PCB transforms and an optional `net_map`. Components keep globally meaningful references such as `U1`; duplicate references are rejected. A mapped local net joins its parent net. An unmapped local net is namespaced as `block-id/local-net`, which prevents accidental short circuits between blocks.
+Exit codes are part of the CLI contract:
 
-Module paths cannot be absolute, escape the project directory or form an import cycle. The compiler expands the graph before ordinary semantic validation and backend generation, so modules add no special state to generated KiCad files. `locked: true` on placements, routes and vias preserves completed module geometry when a later routing pass handles the remaining board.
+| Code | Meaning |
+| --- | --- |
+| `0` | Success, possibly with warnings. |
+| `1` | Invalid IL, missing library, generation failure, or unreadable KiCad artifact. |
+| `2` | The project was generated and published, but ERC or DRC found design errors. |
 
-This is deliberately file-first rather than an MCP editing protocol: agents can use ordinary patches, schema validation, version control and any text tooling. `kil inspect` only reduces read context; it does not become a mutation API.
+## Safe builds
+
+`kil build` never writes directly into the published project while compiling. It performs these steps:
+
+1. Parse strict JSON and collect independent semantic errors.
+2. Resolve imported modules and KiCad library entries.
+3. Generate all files in a sibling staging directory.
+4. Ask `kicad-cli` to read the schematic and PCB, export a netlist, run ERC, refill zones, and run DRC.
+5. Publish the artifact set by rename, with rollback if publication fails.
+
+Structural errors stop publication. ERC and DRC findings do not hide readable output, so `build` publishes the project and exits with code `2`.
+
+The same input and library contents produce byte-identical files. Semantic paths in the IL determine generated UUID v5 values.
+
+## Modules
+
+Large projects can split into recursively imported files. A module owns components, local nets, schematic placement, and PCB geometry. The root file places it with independent schematic and PCB transforms:
+
+```json
+{
+  "id": "controller",
+  "path": "blocks/controller.kil.json",
+  "net_map": {
+    "VCC": "+3V3",
+    "GND": "GND"
+  },
+  "schematic": { "at": [100, 70] },
+  "pcb": { "at": [25, 18], "rotation": 90 }
+}
+```
+
+`net_map` connects selected module nets to parent nets. Unmapped nets receive names such as `controller/SPI_CLK`, which prevents unrelated blocks from joining by accident. Component references remain global and collisions are errors.
+
+Import paths must stay inside the project directory. The loader rejects absolute paths, `..` escapes, cycles, duplicate block IDs, duplicate references, and conflicting placements. Set `locked: true` on a placement, route, or via when later routing passes should preserve that geometry.
+
+The complete example is in [examples/modular-resistors](examples/modular-resistors).
 
 ## Automatic routing
 
-Automatic routing uses [KiCadRoutingTools](https://github.com/drandyhaas/KiCadRoutingTools). Clone it separately and install its Python dependencies and Rust router, then run:
+The optional routing adapter uses [KiCadRoutingTools](https://github.com/drandyhaas/KiCadRoutingTools). It does not make native KiCad files authoritative. The router receives a temporary generated board, and `kil` converts its result into a compact `*.kil.routes.json` cache.
 
-```powershell
+Build KiCadRoutingTools according to its own instructions, then run:
+
+```console
 python C:/tools/KiCadRoutingTools/build_router.py
-cargo run -p kil -- route examples/tiny-controller.kil.json --krt C:/tools/KiCadRoutingTools
-cargo run -p kil -- build examples/tiny-controller.kil.json
+kil route examples/tiny-controller.kil.json --krt C:/tools/KiCadRoutingTools
+kil build examples/tiny-controller.kil.json
 ```
 
-The main IL contains routing intent and any manually authored seed routes. The generated `tiny-controller.kil.routes.json` contains normalized segments and vias plus a SHA-256 fingerprint of every routing input. `check` and `build` reject a missing or stale cache, so changing placement, nets, rules or manual routes cannot silently reuse obsolete copper. Router output exists as a native KiCad file only inside staging; it is never accepted as source truth.
+The cache contains normalized segments, vias, the router version when available, and a SHA-256 fingerprint of all routing inputs. `check` and `build` reject a missing or stale cache after placement, net, rule, or seed-route changes.
 
-`pcb.routing.nets` accepts the same wildcard patterns as KiCadRoutingTools. `extra_args` passes additional router options without shell expansion. CLI `--net` values override the configured net patterns for one run. `--block ID` selects all nets owned by an imported block; explicit `--net` and `--block` are mutually exclusive.
+Route selected nets or one imported block instead of rerouting everything:
 
-The adapter reads KiCadRoutingTools' `JSON_SUMMARY_MIN` record and treats failed or open pad pairs as design violations. A successful process that emits no copper is rejected and cannot replace the previous cache. Before routing, KiCad refills zones in staging; after routing, KiCad independently checks and saves the board before copper is converted back to IL coordinates.
+```console
+kil route board.kil.json --krt C:/tools/KiCadRoutingTools --net "/USB_*"
+kil route board.kil.json --krt C:/tools/KiCadRoutingTools --block controller
+```
 
-KiCadRoutingTools is intentionally an external dependency rather than a linked Rust crate: its public workflow is currently a Python CLI backed by a Rust extension. It is MIT licensed and supports incremental obstacle caches, scoped routing, rip-up/reroute, differential pairs and length matching. Its documented limitations include no push-and-shove, no blind/buried vias, no coarse global-routing pass and no region-specific design rules. For large boards, prefer routing by placement block or net group instead of one global `--nets "*"` invocation.
+There is one important boundary. A mapped net such as global `GND` belongs to the whole board. Selecting a block that uses `GND` can therefore expose the complete `GND` net to the router. Lock finished copper when routing blocks incrementally.
+
+KiCadRoutingTools remains an external dependency. Its current limitations include no push-and-shove, no blind or buried vias, no coarse global-routing pass, and no region-specific design rules. For larger boards, route by block or net group and review each result in KiCad.
+
+## Current scope
+
+Version 1 supports:
+
+- one schematic sheet;
+- single-unit library symbols and library footprints;
+- two copper layers;
+- polygon board outlines;
+- explicit component placement, route polylines, vias, zones, holes, and silkscreen text;
+- recursively imported modules with local coordinates;
+- deterministic KiCad 10 generation;
+- KiCad netlist, ERC, and DRC validation.
+
+It does not yet support importing existing KiCad projects, round-trip editing, electrical sheet hierarchy, buses, derived or multi-unit symbols, embedded libraries, inner copper layers, or native differential-pair and length-tuning constraints in the IL.
+
+## Development
+
+```console
+cargo fmt --all --check
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+```
+
+The workspace contains two crates:
+
+- `kil-core` implements the model, source mapping, validation, module expansion, library resolution, KiCad generation, routing cache, and publication pipeline.
+- `kil` is the command-line interface.
+
+The test suite includes deterministic golden generation, source-span diagnostics, stale route-cache rejection, module transforms, rollback after failed publication, and a 50-part size and compile-time fixture.
+
+## License
+
+Licensed under either Apache-2.0 or MIT, at your option.
