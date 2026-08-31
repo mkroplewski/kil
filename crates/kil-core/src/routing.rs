@@ -11,7 +11,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 type NativeSegment = ([f64; 2], [f64; 2]);
-type SegmentGroupKey = (String, String, i64);
+type SegmentGroupKey = (String, String, i64, bool);
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -148,17 +148,19 @@ pub fn extract_route_cache(
             .width
             .map_or(-1, |width| (width * 1_000_000.0).round() as i64);
         segments
-            .entry((net, layer.to_owned(), width_key))
+            .entry((net, layer.to_owned(), width_key, segment.locked))
             .or_default()
             .push((frame.unmap(start), frame.unmap(end)));
     }
     let mut grouped: BTreeMap<String, Vec<Route>> = BTreeMap::new();
-    for ((net, layer, width_key), net_segments) in segments {
+    for ((net, layer, width_key, locked), net_segments) in segments {
         let width = (width_key >= 0).then_some(width_key as f64 / 1_000_000.0);
-        grouped
-            .entry(net)
-            .or_default()
-            .extend(coalesce_segments(&layer, width, &net_segments));
+        grouped.entry(net).or_default().extend(coalesce_segments(
+            &layer,
+            width,
+            locked,
+            &net_segments,
+        ));
     }
     for routes in grouped.values_mut() {
         routes.sort_by_key(route_sort_key);
@@ -188,6 +190,7 @@ pub fn extract_route_cache(
             at: frame.unmap(at),
             size: via.size,
             drill: via.drill,
+            locked: via.locked,
         });
     }
     vias.sort_by_key(via_sort_key);
@@ -341,6 +344,7 @@ fn point_key(point: [f64; 2]) -> PointKey {
 fn coalesce_segments(
     layer: &str,
     width: Option<f64>,
+    locked: bool,
     segments: &[([f64; 2], [f64; 2])],
 ) -> Vec<Route> {
     let mut points = BTreeMap::new();
@@ -370,6 +374,7 @@ fn coalesce_segments(
                 routes.push(walk_polyline(
                     layer,
                     width,
+                    locked,
                     start,
                     edge,
                     &edges,
@@ -385,6 +390,7 @@ fn coalesce_segments(
             routes.push(walk_polyline(
                 layer,
                 width,
+                locked,
                 edges[edge].0,
                 edge,
                 &edges,
@@ -401,6 +407,7 @@ fn coalesce_segments(
 fn walk_polyline(
     layer: &str,
     width: Option<f64>,
+    locked: bool,
     start: PointKey,
     first_edge: usize,
     edges: &[(PointKey, PointKey)],
@@ -434,6 +441,7 @@ fn walk_polyline(
         layer: layer.to_owned(),
         width,
         path,
+        locked,
     }
 }
 
@@ -495,6 +503,7 @@ mod tests {
         let routes = coalesce_segments(
             "F.Cu",
             Some(0.25),
+            false,
             &[
                 ([0.0, 0.0], [1.0, 0.0]),
                 ([1.0, 0.0], [2.0, 1.0]),

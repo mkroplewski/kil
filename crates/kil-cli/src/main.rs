@@ -1,7 +1,9 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 use kil_core::diagnostic::render_text;
-use kil_core::{BuildOptions, BuildOutcome, RouteOptions, RouteOutcome};
+use kil_core::{
+    BuildOptions, BuildOutcome, InspectOptions, InspectOutcome, RouteOptions, RouteOutcome,
+};
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
@@ -43,16 +45,41 @@ enum Commands {
         /// Override pcb.routing.nets; repeat for multiple patterns.
         #[arg(long = "net")]
         nets: Vec<String>,
+        /// Route all nets owned by one imported block.
+        #[arg(long, conflicts_with = "nets")]
+        block: Option<String>,
+    },
+    /// Print a compact, read-only JSON view of a project, block, net, component or PCB region.
+    Inspect {
+        file: PathBuf,
+        #[arg(long, conflicts_with_all = ["net", "block", "region"])]
+        component: Option<String>,
+        #[arg(long, conflicts_with_all = ["component", "block", "region"])]
+        net: Option<String>,
+        #[arg(long, conflicts_with_all = ["component", "net", "region"])]
+        block: Option<String>,
+        /// PCB rectangle in local millimetres: x1 y1 x2 y2.
+        #[arg(long, num_args = 4, conflicts_with_all = ["component", "net", "block"])]
+        region: Option<Vec<f64>>,
     },
     /// Print the JSON Schema for format_version 1.
-    Schema,
+    Schema {
+        /// Print the schema for imported module files instead of root projects.
+        #[arg(long)]
+        module: bool,
+    },
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Schema => {
-            println!("{}", serde_json::to_string_pretty(&kil_core::schema())?);
+        Commands::Schema { module } => {
+            let schema = if module {
+                kil_core::module_schema()
+            } else {
+                kil_core::schema()
+            };
+            println!("{}", serde_json::to_string_pretty(&schema)?);
             Ok(())
         }
         Commands::Check { file } => finish(
@@ -76,6 +103,7 @@ fn main() -> Result<()> {
             krt,
             python,
             nets,
+            block,
         } => finish_route(
             kil_core::route(&RouteOptions {
                 input: file,
@@ -83,9 +111,29 @@ fn main() -> Result<()> {
                 krt,
                 python,
                 nets,
+                block,
             }),
             cli.diagnostics,
         ),
+        Commands::Inspect {
+            file,
+            component,
+            net,
+            block,
+            region,
+        } => {
+            let region = region.map(|values| [values[0], values[1], values[2], values[3]]);
+            finish_inspect(
+                kil_core::inspect(&InspectOptions {
+                    input: file,
+                    component,
+                    net,
+                    block,
+                    region,
+                }),
+                cli.diagnostics,
+            )
+        }
     }
 }
 
@@ -125,6 +173,24 @@ fn finish_route(outcome: RouteOutcome, format: OutputFormat) -> Result<()> {
             }
             if let Some(path) = &outcome.cache_file {
                 println!("routed {}", path.display());
+            }
+        }
+    }
+    std::process::exit(outcome.exit.code());
+}
+
+fn finish_inspect(outcome: InspectOutcome, format: OutputFormat) -> Result<()> {
+    match format {
+        OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&outcome)?),
+        OutputFormat::Text => {
+            if !outcome.diagnostics.is_empty() {
+                eprint!(
+                    "{}",
+                    render_text(&outcome.diagnostics, Some(&outcome.source))
+                );
+            }
+            if let Some(data) = &outcome.data {
+                println!("{}", serde_json::to_string_pretty(data)?);
             }
         }
     }

@@ -354,7 +354,7 @@ fn pcb_node(project: &KilProject, libraries: &ResolvedLibraries) -> Node {
         };
         for (route_index, route) in routes.iter().enumerate() {
             for (segment_index, segment) in route.path.windows(2).enumerate() {
-                root.push(list(vec![
+                let mut items = vec![
                     sym("segment"),
                     point_list("start", frame.map(segment[0])),
                     point_list("end", frame.map(segment[1])),
@@ -374,7 +374,11 @@ fn pcb_node(project: &KilProject, libraries: &ResolvedLibraries) -> Node {
                             .to_string(),
                         ),
                     ]),
-                ]));
+                ];
+                if route.locked {
+                    items.push(list(vec![sym("locked"), sym("yes")]));
+                }
+                root.push(list(items));
             }
         }
     }
@@ -382,7 +386,7 @@ fn pcb_node(project: &KilProject, libraries: &ResolvedLibraries) -> Node {
         let Some(code) = net_codes.get(&via.net) else {
             continue;
         };
-        root.push(list(vec![
+        let mut items = vec![
             sym("via"),
             point_list("at", frame.map(via.at)),
             list(vec![
@@ -399,7 +403,11 @@ fn pcb_node(project: &KilProject, libraries: &ResolvedLibraries) -> Node {
                 sym("uuid"),
                 quoted(stable_uuid(project, &format!("pcb/via/{index}")).to_string()),
             ]),
-        ]));
+        ];
+        if via.locked {
+            items.push(list(vec![sym("locked"), sym("yes")]));
+        }
+        root.push(list(items));
     }
     for (index, zone) in project.pcb.zones.iter().enumerate() {
         let Some(code) = net_codes.get(&zone.net) else {
@@ -530,6 +538,13 @@ fn placed_footprint(
     let Node::List { items, .. } = &mut node else {
         return node;
     };
+    items.retain(
+        |item| !matches!(item, Node::Atom { atom: Atom::Symbol(value), .. } if value == "locked"),
+    );
+    remove_children(items, &["locked"]);
+    if placement.locked {
+        items.insert(2.min(items.len()), list(vec![sym("locked"), sym("yes")]));
+    }
     remove_children(
         items,
         &[

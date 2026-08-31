@@ -1,13 +1,15 @@
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::kicad::{generate, validate_generated};
 use crate::library::LibraryResolver;
-use crate::model::KilProject;
+use crate::model::{KilProject, ModuleFile};
+use crate::modules::{BlockInfo, resolve_modules};
 use crate::routing::{apply_route_cache, extract_route_cache, route_cache_path, write_route_cache};
 use crate::source_map::SourceMap;
 use crate::validate::{validate_basic, validate_libraries};
+use indexmap::IndexMap;
 use schemars::schema_for;
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -17,6 +19,7 @@ use tempfile::Builder;
 #[derive(Debug, Clone)]
 pub struct LoadedProject {
     pub project: Option<KilProject>,
+    pub blocks: IndexMap<String, BlockInfo>,
     pub source: String,
     pub diagnostics: Vec<Diagnostic>,
 }
@@ -35,6 +38,16 @@ pub struct RouteOptions {
     pub krt: Option<PathBuf>,
     pub python: Option<PathBuf>,
     pub nets: Vec<String>,
+    pub block: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct InspectOptions {
+    pub input: PathBuf,
+    pub component: Option<String>,
+    pub net: Option<String>,
+    pub block: Option<String>,
+    pub region: Option<[f64; 4]>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -73,12 +86,22 @@ pub struct RouteOutcome {
     pub source: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct InspectOutcome {
+    pub exit: ExitClass,
+    pub diagnostics: Vec<Diagnostic>,
+    pub data: Option<Value>,
+    #[serde(skip)]
+    pub source: String,
+}
+
 pub fn load_project(path: &Path) -> LoadedProject {
     let source = match fs::read_to_string(path) {
         Ok(source) => source,
         Err(err) => {
             return LoadedProject {
                 project: None,
+                blocks: IndexMap::new(),
                 source: String::new(),
                 diagnostics: vec![Diagnostic::error(
                     "IO001",
@@ -89,10 +112,13 @@ pub fn load_project(path: &Path) -> LoadedProject {
         }
     };
     match serde_json::from_str::<KilProject>(&source) {
-        Ok(project) => {
-            let diagnostics = validate_basic(&project, path, &source);
+        Ok(mut project) => {
+            let resolution = resolve_modules(&mut project, path);
+            let mut diagnostics = resolution.diagnostics;
+            diagnostics.extend(validate_basic(&project, path, &source));
             LoadedProject {
                 project: Some(project),
+                blocks: resolution.blocks,
                 source,
                 diagnostics,
             }
@@ -104,6 +130,7 @@ pub fn load_project(path: &Path) -> LoadedProject {
             );
             LoadedProject {
                 project: None,
+                blocks: IndexMap::new(),
                 source,
                 diagnostics: vec![
                     Diagnostic::error("JSON001", err.to_string(), path).with_span(span),
@@ -119,6 +146,142 @@ pub fn check(options: &BuildOptions) -> BuildOutcome {
 
 pub fn build(options: &BuildOptions) -> BuildOutcome {
     run(options, true)
+}
+
+pub fn inspect(options: &InspectOptions) -> InspectOutcome {
+    let loaded = load_project(&options.input);
+    let mut diagnostics = loaded.diagnostics;
+    let Some(project) = loaded.project else {
+        return InspectOutcome {
+            exit: ExitClass::Invalid,
+            diagnostics,
+            data: None,
+            source: loaded.source,
+        };
+    };
+    if has_errors(&diagnostics) {
+        return InspectOutcome {
+            exit: ExitClass::Invalid,
+            diagnostics,
+            data: None,
+            source: loaded.source,
+        };
+    }
+
+    let data = if let Some(refdes) = &options.component {
+        project.components.get(refdes).map(|component| {
+            let nets: Vec<_> = project
+                .nets
+                .iter()
+                .filter(|(_, endpoints)| {
+                    endpoints
+                        .iter()
+                        .any(|endpoint| endpoint.starts_with(&format!("{refdes}.")))
+                })
+                .map(|(name, endpoints)| json!({"name": name, "endpoints": endpoints}))
+                .collect();
+            json!({
+                "kind": "component",
+                "ref": refdes,
+                "component": component,
+                "nets": nets,
+                "schematic": project.schematic.placement.get(refdes),
+                "pcb": project.pcb.placement.get(refdes)
+            })
+        })
+    } else if let Some(name) = &options.net {
+        project.nets.get(name).map(|endpoints| {
+            json!({
+                "kind": "net",
+                "name": name,
+                "endpoints": endpoints,
+                "schematic_wires": project.schematic.wires.iter().filter(|wire| wire.net == *name).collect::<Vec<_>>(),
+                "schematic_labels": project.schematic.labels.iter().filter(|label| label.net == *name).collect::<Vec<_>>(),
+                "routes": project.pcb.routes.get(name),
+                "vias": project.pcb.vias.iter().filter(|via| via.net == *name).collect::<Vec<_>>(),
+                "zones": project.pcb.zones.iter().filter(|zone| zone.net == *name).collect::<Vec<_>>()
+            })
+        })
+    } else if let Some(id) = &options.block {
+        loaded.blocks.get(id).map(|block| {
+            let components: IndexMap<_, _> = block
+                .components
+                .iter()
+                .filter_map(|refdes| project.components.get(refdes).map(|value| (refdes, value)))
+                .collect();
+            json!({
+                "kind": "block",
+                "block": block,
+                "components": components,
+                "nets": block.nets.iter().filter_map(|name| project.nets.get(name).map(|endpoints| (name, endpoints))).collect::<IndexMap<_, _>>(),
+                "schematic_placement": block.components.iter().filter_map(|refdes| project.schematic.placement.get(refdes).map(|value| (refdes, value))).collect::<IndexMap<_, _>>(),
+                "pcb_placement": block.components.iter().filter_map(|refdes| project.pcb.placement.get(refdes).map(|value| (refdes, value))).collect::<IndexMap<_, _>>()
+            })
+        })
+    } else if let Some([x1, y1, x2, y2]) = options.region {
+        let min_x = x1.min(x2);
+        let max_x = x1.max(x2);
+        let min_y = y1.min(y2);
+        let max_y = y1.max(y2);
+        let inside = |point: &[f64; 2]| {
+            point[0] >= min_x && point[0] <= max_x && point[1] >= min_y && point[1] <= max_y
+        };
+        Some(json!({
+            "kind": "region",
+            "bounds": [min_x, min_y, max_x, max_y],
+            "components": project.pcb.placement.iter().filter(|(_, placement)| inside(&placement.at)).collect::<IndexMap<_, _>>(),
+            "routes": project.pcb.routes.iter().filter_map(|(net, routes)| {
+                let hits: Vec<_> = routes.iter().filter(|route| route.path.iter().any(&inside)).collect();
+                (!hits.is_empty()).then_some((net, hits))
+            }).collect::<IndexMap<_, _>>(),
+            "vias": project.pcb.vias.iter().filter(|via| inside(&via.at)).collect::<Vec<_>>(),
+            "holes": project.pcb.holes.iter().filter(|hole| inside(&hole.at)).collect::<Vec<_>>(),
+            "silk": project.pcb.silk.iter().filter(|text| inside(&text.at)).collect::<Vec<_>>()
+        }))
+    } else {
+        Some(json!({
+            "kind": "summary",
+            "project": project.project,
+            "components": project.components.len(),
+            "nets": project.nets.len(),
+            "blocks": loaded.blocks.values().collect::<Vec<_>>(),
+            "pcb": {
+                "outline": project.pcb.outline,
+                "placements": project.pcb.placement.len(),
+                "route_polylines": project.pcb.routes.values().map(Vec::len).sum::<usize>(),
+                "vias": project.pcb.vias.len(),
+                "zones": project.pcb.zones.len()
+            }
+        }))
+    };
+
+    if data.is_none() {
+        let (kind, value) = if let Some(value) = &options.component {
+            ("component", value.as_str())
+        } else if let Some(value) = &options.net {
+            ("net", value.as_str())
+        } else {
+            ("block", options.block.as_deref().unwrap_or_default())
+        };
+        diagnostics.push(
+            Diagnostic::error(
+                "INSPECT001",
+                format!("unknown {kind} '{value}'"),
+                &options.input,
+            )
+            .with_help("run 'kil inspect FILE' to list the project summary"),
+        );
+    }
+    InspectOutcome {
+        exit: if data.is_some() {
+            ExitClass::Success
+        } else {
+            ExitClass::Invalid
+        },
+        diagnostics,
+        data,
+        source: loaded.source,
+    }
 }
 
 pub fn route(options: &RouteOptions) -> RouteOutcome {
@@ -236,15 +399,28 @@ pub fn route(options: &RouteOptions) -> RouteOutcome {
     let routed_board = staging
         .path()
         .join(format!("{}.routed.kicad_pcb", project.project.name));
-    let selected_nets = if options.nets.is_empty() {
-        &policy.nets
+    let selected_nets = if !options.nets.is_empty() {
+        options.nets.clone()
+    } else if let Some(block_id) = &options.block {
+        let Some(block) = loaded.blocks.get(block_id) else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "ROUTE017",
+                    format!("unknown block '{block_id}'"),
+                    &options.input,
+                )
+                .with_help("run 'kil inspect FILE' to list block ids"),
+            );
+            return invalid_route(diagnostics, loaded.source);
+        };
+        block.nets.iter().map(|net| format!("/{net}")).collect()
     } else {
-        &options.nets
+        policy.nets.clone()
     };
     let mut command = Command::new(&python);
     command.arg(&router).arg(&input_board).arg(&routed_board);
     if !selected_nets.is_empty() {
-        command.arg("--nets").args(selected_nets);
+        command.arg("--nets").args(&selected_nets);
     }
     command.args(&policy.extra_args);
     let result = match command.output() {
@@ -803,6 +979,10 @@ pub fn schema() -> Value {
     serde_json::to_value(schema_for!(KilProject)).expect("schema is serializable")
 }
 
+pub fn module_schema() -> Value {
+    serde_json::to_value(schema_for!(ModuleFile)).expect("schema is serializable")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -822,6 +1002,22 @@ mod tests {
         let text = schema().to_string();
         assert!(text.contains("format_version"));
         assert!(text.contains("components"));
+        assert!(module_schema().to_string().contains("module"));
+    }
+
+    #[test]
+    fn modular_fixture_is_merged_and_transformed() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/modular-resistors/project.kil.json");
+        let loaded = load_project(&path);
+        assert_eq!(loaded.diagnostics, Vec::<Diagnostic>::new());
+        let project = loaded.project.unwrap();
+        assert_eq!(project.components.len(), 2);
+        assert_eq!(project.pcb.placement["R1"].at, [5.0, 5.0]);
+        assert_eq!(project.pcb.placement["R2"].at, [5.0, 9.0]);
+        assert_eq!(project.pcb.routes["SIGNAL"][0].path[0], [4.175, 5.0]);
+        assert!(project.pcb.routes["SIGNAL"][0].locked);
+        assert_eq!(loaded.blocks["divider"].nets, ["GND", "SIGNAL"]);
     }
 
     #[test]

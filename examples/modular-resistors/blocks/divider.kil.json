@@ -1,0 +1,56 @@
+{
+  "format_version": 1,
+  "module": {
+    "id": "resistive-divider",
+    "title": "Two-resistor reusable layout block"
+  },
+  "components": {
+    "R1": {
+      "symbol": "Device:R",
+      "value": "10k",
+      "footprint": "Resistor_SMD:R_0603_1608Metric"
+    },
+    "R2": {
+      "symbol": "Device:R",
+      "value": "20k",
+      "footprint": "Resistor_SMD:R_0603_1608Metric"
+    }
+  },
+  "nets": {
+    "SIGNAL": ["R1.1", "R2.1"],
+    "GND": ["R1.2", "R2.2"]
+  },
+  "schematic": {
+    "placement": {
+      "R1": { "at": [0, 0] },
+      "R2": { "at": [12.7, 0] }
+    }
+  },
+  "pcb": {
+    "placement": {
+      "R1": { "at": [0, 0], "locked": true },
+      "R2": { "at": [0, 4], "locked": true }
+    },
+    "routes": {
+      "SIGNAL": [
+        { "layer": "F.Cu", "path": [[-0.825, 0], [-0.825, 4]], "locked": true }
+      ],
+      "GND": [
+        { "layer": "F.Cu", "path": [[0.825, 0], [0.825, 2]], "locked": true },
+        { "layer": "F.Cu", "path": [[0.825, 2], [0.825, 4]], "locked": true }
+      ]
+    },
+    "vias": [
+      { "net": "GND", "at": [0.825, 2], "locked": true }
+    ],
+    "zones": [
+      {
+        "net": "GND",
+        "layer": "B.Cu",
+        "outline": [[-4.5, -4.5], [6.5, -4.5], [6.5, 8.5], [-4.5, 8.5]]
+      }
+    ],
+    "holes": [{ "at": [5, 7], "diameter": 2.5 }],
+    "silk": [{ "text": "KIL", "at": [1, -3] }]
+  }
+}

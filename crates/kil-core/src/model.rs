@@ -24,10 +24,68 @@ pub struct KilProject {
     pub components: IndexMap<String, Component>,
     pub nets: IndexMap<String, Vec<String>>,
     #[serde(default)]
+    pub imports: Vec<ModuleImport>,
+    #[serde(default)]
     pub schematic: Schematic,
     pub pcb: Pcb,
     #[serde(default)]
     pub rules: Rules,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ModuleFile {
+    pub format_version: u32,
+    pub module: ModuleMeta,
+    #[serde(default)]
+    pub components: IndexMap<String, Component>,
+    #[serde(default)]
+    pub nets: IndexMap<String, Vec<String>>,
+    #[serde(default)]
+    pub imports: Vec<ModuleImport>,
+    #[serde(default)]
+    pub schematic: Schematic,
+    #[serde(default)]
+    pub pcb: PcbFragment,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ModuleMeta {
+    pub id: String,
+    #[serde(default)]
+    pub title: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ModuleImport {
+    pub id: String,
+    pub path: String,
+    #[serde(default)]
+    pub net_map: IndexMap<String, String>,
+    #[serde(default)]
+    pub schematic: Transform,
+    #[serde(default)]
+    pub pcb: Transform,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Transform {
+    #[serde(default)]
+    pub at: Point,
+    #[serde(default)]
+    pub rotation: f64,
+}
+
+impl Default for Transform {
+    fn default() -> Self {
+        Self {
+            at: [0.0, 0.0],
+            rotation: 0.0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -111,6 +169,23 @@ pub struct Pcb {
     pub routing: Option<RoutingPolicy>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PcbFragment {
+    #[serde(default)]
+    pub placement: IndexMap<String, PcbPlacement>,
+    #[serde(default)]
+    pub routes: IndexMap<String, Vec<Route>>,
+    #[serde(default)]
+    pub vias: Vec<Via>,
+    #[serde(default)]
+    pub zones: Vec<Zone>,
+    #[serde(default)]
+    pub holes: Vec<Hole>,
+    #[serde(default)]
+    pub silk: Vec<SilkText>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum RoutingEngine {
@@ -152,6 +227,8 @@ pub struct PcbPlacement {
     pub rotation: f64,
     #[serde(default = "default_side")]
     pub side: BoardSide,
+    #[serde(default)]
+    pub locked: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -162,6 +239,8 @@ pub struct Route {
     #[serde(default)]
     pub width: Option<f64>,
     pub path: Vec<Point>,
+    #[serde(default)]
+    pub locked: bool,
 }
 
 fn default_front_copper() -> String {
@@ -177,6 +256,8 @@ pub struct Via {
     pub size: Option<f64>,
     #[serde(default)]
     pub drill: Option<f64>,
+    #[serde(default)]
+    pub locked: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
