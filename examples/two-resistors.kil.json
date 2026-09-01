@@ -1,4 +1,5 @@
 {
+  "$schema": "https://raw.githubusercontent.com/mkroplewski/kil/master/schemas/kil-v1.schema.json",
   "format_version": 1,
   "project": {
     "name": "two-resistors",

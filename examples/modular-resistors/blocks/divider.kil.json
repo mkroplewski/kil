@@ -1,4 +1,5 @@
 {
+  "$schema": "https://raw.githubusercontent.com/mkroplewski/kil/master/schemas/kil-module-v1.schema.json",
   "format_version": 1,
   "module": {
     "id": "resistive-divider",

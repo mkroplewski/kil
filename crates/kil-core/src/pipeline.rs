@@ -1,7 +1,7 @@
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::kicad::{generate, validate_generated};
 use crate::library::LibraryResolver;
-use crate::model::{KilProject, ModuleFile};
+use crate::model::{KilProject, MODULE_SCHEMA_URL, ModuleFile, PROJECT_SCHEMA_URL};
 use crate::modules::{BlockInfo, resolve_modules};
 use crate::routing::{apply_route_cache, extract_route_cache, route_cache_path, write_route_cache};
 use crate::source_map::SourceMap;
@@ -1015,11 +1015,25 @@ fn invalid_route(diagnostics: Vec<Diagnostic>, source: String) -> RouteOutcome {
 }
 
 pub fn schema() -> Value {
-    serde_json::to_value(schema_for!(KilProject)).expect("schema is serializable")
+    schema_with_id(
+        serde_json::to_value(schema_for!(KilProject)).expect("schema is serializable"),
+        PROJECT_SCHEMA_URL,
+    )
 }
 
 pub fn module_schema() -> Value {
-    serde_json::to_value(schema_for!(ModuleFile)).expect("schema is serializable")
+    schema_with_id(
+        serde_json::to_value(schema_for!(ModuleFile)).expect("schema is serializable"),
+        MODULE_SCHEMA_URL,
+    )
+}
+
+fn schema_with_id(mut schema: Value, id: &str) -> Value {
+    schema
+        .as_object_mut()
+        .expect("root schema is an object")
+        .insert("$id".into(), Value::String(id.into()));
+    schema
 }
 
 #[cfg(test)]
@@ -1038,10 +1052,30 @@ mod tests {
 
     #[test]
     fn schema_exposes_format_version() {
-        let text = schema().to_string();
+        let root = schema();
+        let text = root.to_string();
         assert!(text.contains("format_version"));
         assert!(text.contains("components"));
-        assert!(module_schema().to_string().contains("module"));
+        assert_eq!(root["$id"], PROJECT_SCHEMA_URL);
+        assert!(root["properties"]["$schema"].is_object());
+
+        let module = module_schema();
+        assert!(module.to_string().contains("module"));
+        assert_eq!(module["$id"], MODULE_SCHEMA_URL);
+        assert!(module["properties"]["$schema"].is_object());
+    }
+
+    #[test]
+    fn schema_hint_is_accepted_but_not_serialized() {
+        let source = include_str!("../../../examples/rc-led.kil.json");
+        let project: KilProject = serde_json::from_str(source).unwrap();
+        assert_eq!(project.schema.as_deref(), Some(PROJECT_SCHEMA_URL));
+        assert!(
+            serde_json::to_value(project)
+                .unwrap()
+                .get("$schema")
+                .is_none()
+        );
     }
 
     #[test]

@@ -4,6 +4,11 @@ use serde::{Deserialize, Serialize};
 
 pub type Point = [f64; 2];
 
+pub const PROJECT_SCHEMA_URL: &str =
+    "https://raw.githubusercontent.com/mkroplewski/kil/master/schemas/kil-v1.schema.json";
+pub const MODULE_SCHEMA_URL: &str =
+    "https://raw.githubusercontent.com/mkroplewski/kil/master/schemas/kil-module-v1.schema.json";
+
 fn default_units() -> Units {
     Units::Mm
 }
@@ -17,6 +22,10 @@ pub enum Units {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct KilProject {
+    #[serde(rename = "$schema", default, skip_serializing)]
+    #[schemars(with = "String")]
+    #[schemars(description = "JSON Schema URI used by editors for completion and validation.")]
+    pub schema: Option<String>,
     pub format_version: u32,
     pub project: ProjectMeta,
     #[serde(default = "default_units")]
@@ -35,6 +44,10 @@ pub struct KilProject {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ModuleFile {
+    #[serde(rename = "$schema", default, skip_serializing)]
+    #[schemars(with = "String")]
+    #[schemars(description = "JSON Schema URI used by editors for completion and validation.")]
+    pub schema: Option<String>,
     pub format_version: u32,
     pub module: ModuleMeta,
     #[serde(default)]

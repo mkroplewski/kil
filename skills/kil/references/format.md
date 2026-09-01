@@ -6,6 +6,7 @@ Read this reference when creating or structurally editing KIL source. Query `kil
 
 A root file contains:
 
+- `$schema` pointing to `https://raw.githubusercontent.com/mkroplewski/kil/master/schemas/kil-v1.schema.json` for editor completion;
 - `format_version`, `project`, and `units`;
 - a `components` map keyed by stable reference designators;
 - a `nets` map whose values are component endpoints;
@@ -36,6 +37,8 @@ Use `schematic.no_connect` for intentionally unused pins. Do not omit a known co
 ## Modules
 
 Use modules to keep large projects readable and to isolate local geometry. A module may contain components, local nets, schematic data, PCB data, and nested imports. The root import supplies a stable block ID, a relative path, optional net mapping, and separate schematic and PCB transforms.
+
+New module files should use `https://raw.githubusercontent.com/mkroplewski/kil/master/schemas/kil-module-v1.schema.json` as `$schema`.
 
 ```json
 {

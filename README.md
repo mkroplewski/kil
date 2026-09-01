@@ -128,6 +128,15 @@ cargo run -p kil -- --help
 
 ## Quick start
 
+Start a project file with the versioned schema URL to enable completion and validation in editors that support JSON Schema:
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/mkroplewski/kil/master/schemas/kil-v1.schema.json",
+  "format_version": 1
+}
+```
+
 Validate an input without publishing generated files:
 
 ```console

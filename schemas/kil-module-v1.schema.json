@@ -1,0 +1,553 @@
+{
+  "$defs": {
+    "BoardSide": {
+      "enum": [
+        "front",
+        "back"
+      ],
+      "type": "string"
+    },
+    "Component": {
+      "additionalProperties": false,
+      "properties": {
+        "fields": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "footprint": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "value": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "symbol",
+        "footprint"
+      ],
+      "type": "object"
+    },
+    "Hole": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "diameter": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "at",
+        "diameter"
+      ],
+      "type": "object"
+    },
+    "ModuleImport": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "net_map": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "path": {
+          "type": "string"
+        },
+        "pcb": {
+          "$ref": "#/$defs/Transform",
+          "default": {
+            "at": [
+              0.0,
+              0.0
+            ],
+            "rotation": 0.0
+          }
+        },
+        "schematic": {
+          "$ref": "#/$defs/Transform",
+          "default": {
+            "at": [
+              0.0,
+              0.0
+            ],
+            "rotation": 0.0
+          }
+        }
+      },
+      "required": [
+        "id",
+        "path"
+      ],
+      "type": "object"
+    },
+    "ModuleMeta": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "PcbFragment": {
+      "additionalProperties": false,
+      "properties": {
+        "holes": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Hole"
+          },
+          "type": "array"
+        },
+        "placement": {
+          "additionalProperties": {
+            "$ref": "#/$defs/PcbPlacement"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "routes": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/Route"
+            },
+            "type": "array"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "silk": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SilkText"
+          },
+          "type": "array"
+        },
+        "vias": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Via"
+          },
+          "type": "array"
+        },
+        "zones": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Zone"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "PcbPlacement": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "locked": {
+          "default": false,
+          "type": "boolean"
+        },
+        "rotation": {
+          "default": 0.0,
+          "format": "double",
+          "type": "number"
+        },
+        "side": {
+          "$ref": "#/$defs/BoardSide",
+          "default": "front"
+        }
+      },
+      "required": [
+        "at"
+      ],
+      "type": "object"
+    },
+    "Route": {
+      "additionalProperties": false,
+      "properties": {
+        "layer": {
+          "default": "F.Cu",
+          "type": "string"
+        },
+        "locked": {
+          "default": false,
+          "type": "boolean"
+        },
+        "path": {
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "width": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "Schematic": {
+      "additionalProperties": false,
+      "properties": {
+        "labels": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SchematicLabel"
+          },
+          "type": "array"
+        },
+        "no_connect": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "placement": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SchematicPlacement"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "wires": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SchematicWire"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "SchematicLabel": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "net": {
+          "type": "string"
+        },
+        "rotation": {
+          "default": 0.0,
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "net",
+        "at"
+      ],
+      "type": "object"
+    },
+    "SchematicPlacement": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "rotation": {
+          "default": 0.0,
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "at"
+      ],
+      "type": "object"
+    },
+    "SchematicWire": {
+      "additionalProperties": false,
+      "properties": {
+        "net": {
+          "type": "string"
+        },
+        "path": {
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "net",
+        "path"
+      ],
+      "type": "object"
+    },
+    "SilkText": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "layer": {
+          "default": "F.SilkS",
+          "type": "string"
+        },
+        "rotation": {
+          "default": 0.0,
+          "format": "double",
+          "type": "number"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "at"
+      ],
+      "type": "object"
+    },
+    "Transform": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "default": [
+            0.0,
+            0.0
+          ],
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "rotation": {
+          "default": 0.0,
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "Via": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "drill": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "locked": {
+          "default": false,
+          "type": "boolean"
+        },
+        "net": {
+          "type": "string"
+        },
+        "size": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "net",
+        "at"
+      ],
+      "type": "object"
+    },
+    "Zone": {
+      "additionalProperties": false,
+      "properties": {
+        "clearance": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "layer": {
+          "default": "F.Cu",
+          "type": "string"
+        },
+        "net": {
+          "type": "string"
+        },
+        "outline": {
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "net",
+        "outline"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://raw.githubusercontent.com/mkroplewski/kil/master/schemas/kil-module-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "description": "JSON Schema URI used by editors for completion and validation.",
+      "type": "string",
+      "writeOnly": true
+    },
+    "components": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Component"
+      },
+      "default": {},
+      "type": "object"
+    },
+    "format_version": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "imports": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ModuleImport"
+      },
+      "type": "array"
+    },
+    "module": {
+      "$ref": "#/$defs/ModuleMeta"
+    },
+    "nets": {
+      "additionalProperties": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "default": {},
+      "type": "object"
+    },
+    "pcb": {
+      "$ref": "#/$defs/PcbFragment",
+      "default": {
+        "holes": [],
+        "placement": {},
+        "routes": {},
+        "silk": [],
+        "vias": [],
+        "zones": []
+      }
+    },
+    "schematic": {
+      "$ref": "#/$defs/Schematic",
+      "default": {
+        "labels": [],
+        "no_connect": [],
+        "placement": {},
+        "wires": []
+      }
+    }
+  },
+  "required": [
+    "format_version",
+    "module"
+  ],
+  "title": "ModuleFile",
+  "type": "object"
+}
