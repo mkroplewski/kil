@@ -1,0 +1,59 @@
+---
+name: kil
+description: Create, edit, inspect, validate, build, or autoroute KiCad Intent Language projects stored as *.kil.json. Use for KIL source projects, not for directly editing native KiCad files.
+---
+
+# KIL projects
+
+Use `kil` as the only compiler and validator for KiCad Intent Language projects. Edit KIL source with ordinary file patches. Do not introduce an MCP editing layer.
+
+## Source of truth
+
+- Edit root `*.kil.json` files and imported module files.
+- Never edit generated `.kicad_pro`, `.kicad_sch`, or `.kicad_pcb` files. A later build replaces them.
+- Never hand-edit `*.kil.routes.json`. Only `kil route` may publish a route cache.
+- Preserve strict JSON. Comments, trailing commas, `NaN`, and JSON5 syntax are invalid.
+
+If the request concerns an existing native KiCad project without KIL source, explain that KIL v1 has no importer or round-trip workflow. Do not convert the native files by improvising a parser.
+
+## Before editing
+
+Run `kil --version` to confirm the CLI is available. If it is missing, report that and offer the installation command from the project README. Do not execute a remote installer without the user's authorization.
+
+Find the root KIL file and inspect only the context needed for the task:
+
+```console
+kil inspect board.kil.json
+kil inspect board.kil.json --component U1
+kil inspect board.kil.json --net GND
+kil inspect board.kil.json --block controller
+kil inspect board.kil.json --region 10 10 40 35
+```
+
+Use `kil schema` or `kil schema --module` when a field is uncertain. The installed schema is authoritative over examples in this skill.
+
+Read [references/format.md](references/format.md) when creating a project, changing connectivity or geometry, or working with modules. Read [references/routing.md](references/routing.md) only when the user asks for routing or autorouting.
+
+## Editing workflow
+
+Make the smallest coherent source edit that satisfies the request. Keep references stable and use endpoint notation such as `U1.3`. Prefer named pins such as `U1.VCC` only when the library symbol resolves that name unambiguously.
+
+After editing, run:
+
+```console
+kil check path/to/project.kil.json
+```
+
+Treat the exit status as part of the result:
+
+- `0` means success or warnings only.
+- `1` means invalid source, unresolved libraries, failed generation, or unreadable KiCad output. Fix source errors before continuing.
+- `2` means generated files are readable but ERC or DRC found design errors. Report remaining violations and fix those within the user's requested scope.
+
+Use `kil build` when the user requests generated KiCad files or when finished artifacts are part of the task. A successful build publishes to `build/kicad/<project>/` by default. Do not treat publication as permission to edit those files.
+
+## Boundaries
+
+KIL v1 targets KiCad 10, one schematic sheet, single-unit library symbols, library footprints, and two copper layers. It has no importer, round-trip editing, electrical hierarchy, buses, embedded libraries, inner copper layers, or native differential-pair and length-tuning constraints.
+
+Do not hide these limits by emitting unsupported fields. If the requested design needs an unsupported feature, identify the exact boundary and stop before producing misleading output.

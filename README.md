@@ -96,6 +96,22 @@ The installer downloads the correct release for the current platform, verifies i
 
 Prebuilt releases cover Windows x86-64, Linux x86-64, macOS Intel, and macOS Apple Silicon. KiCad itself remains a system dependency.
 
+### Install the agent skill
+
+The repository includes one portable agent skill for editing, inspecting, validating, building, and routing KIL projects. Install it globally for detected agents:
+
+```console
+npx skills add mkroplewski/kil --skill kil -g -y
+```
+
+Omit `-g` to install it only in the current project:
+
+```console
+npx skills add mkroplewski/kil --skill kil -y
+```
+
+The skill is compatible with Codex and other agents that support the `SKILL.md` format. It does not install the `kil` binary; use the platform installer above for that.
+
 ### Install from source
 
 Building from source requires Rust 1.90 or newer. Clone the repository, then run:
