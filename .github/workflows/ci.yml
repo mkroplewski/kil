@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-15]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.90
+        shell: pwsh
+        run: rustup toolchain install 1.90.0 --profile minimal --component rustfmt --component clippy
+
+      - name: Run tests
+        shell: pwsh
+        run: cargo +1.90.0 test --workspace --locked
+
+      - name: Check formatting, lints, and generated schemas
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo +1.90.0 fmt --all -- --check
+          cargo +1.90.0 clippy --workspace --all-targets --locked -- -D warnings
+          cargo +1.90.0 run --quiet -p kil -- schema > /tmp/kil-v1.schema.json
+          cargo +1.90.0 run --quiet -p kil -- schema --module > /tmp/kil-module-v1.schema.json
+          python3 -c 'import json; assert json.load(open("schemas/kil-v1.schema.json")) == json.load(open("/tmp/kil-v1.schema.json"))'
+          python3 -c 'import json; assert json.load(open("schemas/kil-module-v1.schema.json")) == json.load(open("/tmp/kil-module-v1.schema.json"))'

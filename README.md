@@ -76,7 +76,7 @@ See [examples/two-resistors.kil.json](examples/two-resistors.kil.json) for a com
 - the KiCad symbol and footprint libraries used by the input file
 - Python 3.9 or newer when using the bundled autorouter
 
-The current implementation is developed and tested on Windows. The Rust code is intended to be portable, but other operating systems are not yet covered by CI.
+CI tests the Rust workspace on Windows, Linux, and macOS. Full KiCad integration still depends on a local KiCad 10 installation.
 
 ## Install
 
@@ -132,7 +132,7 @@ Start a project file with the versioned schema URL to enable completion and vali
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/mkroplewski/kil/master/schemas/kil-v1.schema.json",
+  "$schema": "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-v1.schema.json",
   "format_version": 1
 }
 ```

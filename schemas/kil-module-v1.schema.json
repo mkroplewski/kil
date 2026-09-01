@@ -482,7 +482,7 @@
       "type": "object"
     }
   },
-  "$id": "https://raw.githubusercontent.com/mkroplewski/kil/master/schemas/kil-module-v1.schema.json",
+  "$id": "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-module-v1.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {

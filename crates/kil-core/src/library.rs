@@ -544,21 +544,14 @@ fn symbol_unit_number(name: &str) -> Option<u32> {
 }
 
 fn standard_roots() -> Vec<PathBuf> {
-    let mut roots = vec![
+    vec![
         PathBuf::from("/usr/share/kicad"),
         PathBuf::from("/usr/local/share/kicad"),
-    ];
-    #[cfg(target_os = "windows")]
-    {
-        roots.push(PathBuf::from(r"C:\Program Files\KiCad\10.0\share\kicad"));
-    }
-    #[cfg(target_os = "macos")]
-    {
-        roots.push(PathBuf::from(
-            "/Applications/KiCad/KiCad.app/Contents/SharedSupport",
-        ));
-    }
-    roots
+        #[cfg(target_os = "windows")]
+        PathBuf::from(r"C:\Program Files\KiCad\10.0\share\kicad"),
+        #[cfg(target_os = "macos")]
+        PathBuf::from("/Applications/KiCad/KiCad.app/Contents/SharedSupport"),
+    ]
 }
 
 fn global_config_dirs() -> Vec<PathBuf> {

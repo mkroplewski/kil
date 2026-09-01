@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 pub type Point = [f64; 2];
 
 pub const PROJECT_SCHEMA_URL: &str =
-    "https://raw.githubusercontent.com/mkroplewski/kil/master/schemas/kil-v1.schema.json";
+    "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-v1.schema.json";
 pub const MODULE_SCHEMA_URL: &str =
-    "https://raw.githubusercontent.com/mkroplewski/kil/master/schemas/kil-module-v1.schema.json";
+    "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-module-v1.schema.json";
 
 fn default_units() -> Units {
     Units::Mm

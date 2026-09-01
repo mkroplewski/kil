@@ -962,11 +962,12 @@ fn resolve_python(explicit: Option<&Path>) -> PathBuf {
 }
 
 fn bundled_root() -> Option<PathBuf> {
-    std::env::current_exe()
-        .ok()?
-        .parent()?
-        .parent()
-        .map(Path::to_path_buf)
+    bundled_root_from_executable(&std::env::current_exe().ok()?)
+}
+
+fn bundled_root_from_executable(executable: &Path) -> Option<PathBuf> {
+    let executable = fs::canonicalize(executable).unwrap_or_else(|_| executable.to_path_buf());
+    executable.parent()?.parent().map(Path::to_path_buf)
 }
 
 fn python_works(program: &Path) -> bool {
@@ -1039,6 +1040,26 @@ fn schema_with_id(mut schema: Value, id: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn bundled_root_follows_symlinked_executable() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().unwrap();
+        let install_root = dir.path().join("share/kil");
+        let installed_binary = install_root.join("bin/kil");
+        let launcher = dir.path().join("bin/kil");
+        fs::create_dir_all(installed_binary.parent().unwrap()).unwrap();
+        fs::create_dir_all(launcher.parent().unwrap()).unwrap();
+        fs::write(&installed_binary, "test").unwrap();
+        symlink(&installed_binary, &launcher).unwrap();
+
+        assert_eq!(
+            bundled_root_from_executable(&launcher),
+            Some(fs::canonicalize(install_root).unwrap())
+        );
+    }
 
     #[test]
     fn invalid_json_has_a_source_span() {

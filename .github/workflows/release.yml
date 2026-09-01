@@ -9,8 +9,28 @@ permissions:
   contents: write
 
 jobs:
+  verify:
+    name: Verify source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.90
+        run: rustup toolchain install 1.90.0 --profile minimal --component rustfmt --component clippy
+
+      - name: Run quality gates
+        run: |
+          cargo +1.90.0 fmt --all -- --check
+          cargo +1.90.0 test --workspace --locked
+          cargo +1.90.0 clippy --workspace --all-targets --locked -- -D warnings
+          cargo +1.90.0 run --quiet -p kil -- schema > /tmp/kil-v1.schema.json
+          cargo +1.90.0 run --quiet -p kil -- schema --module > /tmp/kil-module-v1.schema.json
+          python3 -c 'import json; assert json.load(open("schemas/kil-v1.schema.json")) == json.load(open("/tmp/kil-v1.schema.json"))'
+          python3 -c 'import json; assert json.load(open("schemas/kil-module-v1.schema.json")) == json.load(open("/tmp/kil-module-v1.schema.json"))'
+
   build:
     name: Build ${{ matrix.target }}
+    needs: verify
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -76,6 +96,12 @@ jobs:
           } else {
             tar -czf "${{ matrix.archive }}" -C payload .
           }
+
+      - name: Smoke test packaged binary
+        shell: pwsh
+        run: |
+          & (Resolve-Path "payload/${{ matrix.executable }}") --version
+          if ($LASTEXITCODE -ne 0) { throw "packaged kil binary failed" }
 
       - uses: actions/upload-artifact@v4
         with:

@@ -7,7 +7,26 @@ bin_dir="${KIL_BIN_DIR:-$HOME/.local/bin}"
 release_base="https://github.com/$repository/releases/latest/download"
 
 case "$install_root" in
-    ""|/|"$HOME")
+    /*) ;;
+    *)
+        echo "KIL_INSTALL_ROOT must be an absolute path" >&2
+        exit 1
+        ;;
+esac
+case "$bin_dir" in
+    /*) ;;
+    *)
+        echo "KIL_BIN_DIR must be an absolute path" >&2
+        exit 1
+        ;;
+esac
+
+mkdir -p "$install_root" "$bin_dir"
+install_root=$(cd -P "$install_root" && pwd)
+bin_dir=$(cd -P "$bin_dir" && pwd)
+home_dir=$(cd -P "$HOME" && pwd)
+case "$install_root" in
+    /|"$home_dir")
         echo "KIL_INSTALL_ROOT must be a dedicated subdirectory" >&2
         exit 1
         ;;
@@ -76,8 +95,18 @@ if [ -z "$python" ]; then
     exit 1
 fi
 
-mkdir -p "$install_root/lib" "$bin_dir"
-install -m 755 "$temporary_dir/payload/kil" "$bin_dir/kil"
+mkdir -p "$install_root/bin" "$install_root/lib"
+installed_binary="$install_root/bin/kil"
+launcher="$bin_dir/kil"
+install -m 755 "$temporary_dir/payload/kil" "$installed_binary"
+if [ "$launcher" != "$installed_binary" ]; then
+    if [ -d "$launcher" ]; then
+        echo "$launcher is a directory; cannot install kil command" >&2
+        exit 1
+    fi
+    rm -f "$launcher"
+    ln -s "$installed_binary" "$launcher"
+fi
 rm -rf "$install_root/lib/krt"
 cp -R "$temporary_dir/payload/krt" "$install_root/lib/krt"
 
