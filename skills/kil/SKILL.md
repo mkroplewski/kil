@@ -20,7 +20,7 @@ If the request concerns an existing native KiCad project without KIL source, exp
 
 Run `kil --version` to confirm the CLI is available. If it is missing, report that and offer the installation command from the project README. Do not execute a remote installer without the user's authorization.
 
-Find the root KIL file and inspect only the context needed for the task:
+Find the root KIL file and inspect only the context needed for the task. Do not rescan the whole project after each edit:
 
 ```console
 kil inspect board.kil.json
@@ -30,9 +30,9 @@ kil inspect board.kil.json --block controller
 kil inspect board.kil.json --region 10 10 40 35
 ```
 
-Use `kil schema` or `kil schema --module` when a field is uncertain. The installed schema is authoritative over examples in this skill.
+Use `kil schema` or `kil schema --module` once when a field is uncertain. The installed schema is authoritative over examples in this skill.
 
-Before wiring an unfamiliar IC, inspect its resolved library definition instead of guessing pin numbers:
+Before wiring, identify unfamiliar symbols and inspect their resolved definitions up front instead of discovering pins one component at a time:
 
 ```console
 kil library show MCU_Microchip_ATtiny:ATtiny1616-S
@@ -44,13 +44,23 @@ Read [references/format.md](references/format.md) when creating a project, chang
 
 ## Editing workflow
 
-Make the smallest coherent source edit that satisfies the request. Keep references stable and use endpoint notation such as `U1.3`. Prefer named pins such as `U1.VCC` only when the library symbol resolves that name unambiguously.
+Make one coherent source edit that satisfies the request. Keep references stable and use endpoint notation such as `U1.3`. Prefer named pins such as `U1.VCC` only when the library symbol resolves that name unambiguously.
+
+Before the first compiler run, verify the common structural requirements together:
+
+- every component has the symbol, footprint, schematic placement, and PCB placement required by the schema;
+- every endpoint appears on at most one net, and intentional unused pins are listed under `schematic.no_connect`;
+- the board outline, rules, zones, holes, and routing policy refer only to declared objects and nets.
+
+Fix all independent diagnostics from a compiler run in one edit. Do not rerun `schema`, broad `inspect`, or unchanged library queries unless a diagnostic makes them relevant.
 
 After editing, run:
 
 ```console
 kil check path/to/project.kil.json
 ```
+
+For a new autorouted project that declares `pcb.routing` but has no route cache yet, skip this initial `check`; its missing-cache diagnostic is expected. Run `kil route` after the structural review above. The route command validates the source before invoking the router. Then run `kil build` to publish the project. Read the routing reference for incremental or selective routing.
 
 Treat the exit status as part of the result:
 

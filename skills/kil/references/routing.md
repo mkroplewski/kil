@@ -15,7 +15,9 @@ The root PCB needs a routing policy. Query `kil schema` for the current structur
 }
 ```
 
-Run `kil check` before routing. Fix structural errors first. ERC or existing DRC findings may remain if they do not prevent the requested routing work, but record them so new violations are distinguishable.
+For an existing project, run `kil check` before routing and fix structural errors first. For a new project that already declares routing but has no cache, run `kil route` directly after the preflight in `SKILL.md`; a preceding check would only report the expected missing cache. The route command validates before invoking the router.
+
+After a router run, group related placement or rule fixes into one edit before trying again. Do not repeat unchanged schema, library, or whole-project inspection commands. ERC or existing DRC findings may remain if they do not prevent the requested routing work, but record them so new violations are distinguishable.
 
 ## Route narrowly
 
