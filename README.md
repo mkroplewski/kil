@@ -159,6 +159,7 @@ Generated KiCad files are disposable build artifacts. Manual changes to them dis
 | `kil inspect FILE --net GND` | Prints endpoints and geometry for one net. |
 | `kil inspect FILE --block power` | Prints one imported block. |
 | `kil inspect FILE --region X1 Y1 X2 Y2` | Prints PCB objects with a recorded point inside a rectangular area. |
+| `kil library show SYMBOL` | Resolves a KiCad symbol, including `extends`, and prints its properties and pin metadata. |
 | `kil schema` | Prints the root project JSON Schema. |
 | `kil schema --module` | Prints the module JSON Schema. |
 | `kil route FILE --krt PATH` | Runs KiCadRoutingTools on a staged board and writes normalized copper back to a route cache. |
@@ -249,7 +250,7 @@ Version 1 supports:
 - deterministic KiCad 10 generation;
 - KiCad netlist, ERC, and DRC validation.
 
-It does not yet support importing existing KiCad projects, round-trip editing, electrical sheet hierarchy, buses, derived or multi-unit symbols, embedded libraries, inner copper layers, or native differential-pair and length-tuning constraints in the IL.
+It does not yet support importing existing KiCad projects, round-trip editing, electrical sheet hierarchy, buses, multi-unit symbols, embedded libraries, inner copper layers, or native differential-pair and length-tuning constraints in the IL. Derived single-unit library symbols are flattened during library resolution.
 
 ## Development
 

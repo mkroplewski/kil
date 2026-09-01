@@ -32,6 +32,14 @@ kil inspect board.kil.json --region 10 10 40 35
 
 Use `kil schema` or `kil schema --module` when a field is uncertain. The installed schema is authoritative over examples in this skill.
 
+Before wiring an unfamiliar IC, inspect its resolved library definition instead of guessing pin numbers:
+
+```console
+kil library show MCU_Microchip_ATtiny:ATtiny1616-S
+```
+
+The result includes inherited properties plus every pin's number, name, electrical type, graphic style, position, and hidden state. Derived KiCad symbols are resolved automatically.
+
 Read [references/format.md](references/format.md) when creating a project, changing connectivity or geometry, or working with modules. Read [references/routing.md](references/routing.md) only when the user asks for routing or autorouting.
 
 ## Editing workflow

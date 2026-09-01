@@ -2,18 +2,33 @@ use crate::diagnostic::Diagnostic;
 use crate::model::KilProject;
 use crate::source_map::SourceMap;
 use indexmap::IndexMap;
-use kiutils_kicad::{FootprintFile, FpLibTableFile, SymLibTableFile, SymbolLibFile};
+use kiutils_kicad::{
+    FootprintFile, FpLibTableFile, SymLibTableFile, Symbol, SymbolLibDocument, SymbolLibFile,
+};
 use kiutils_sexpr::{Atom, Node};
+use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ResolvedPin {
     pub number: String,
     pub name: Option<String>,
+    pub electrical_type: Option<String>,
+    pub graphic_style: Option<String>,
     pub at: [f64; 2],
     pub angle: f64,
+    pub hidden: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LibrarySymbolInfo {
+    pub id: String,
+    pub source: PathBuf,
+    pub derived_from: Vec<String>,
+    pub properties: BTreeMap<String, String>,
+    pub pins: Vec<ResolvedPin>,
 }
 
 #[derive(Debug, Clone)]
@@ -35,6 +50,7 @@ pub struct ResolvedLibraries {
 struct SymbolAsset {
     node: Node,
     pins: Vec<ResolvedPin>,
+    derived_from: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -272,6 +288,20 @@ impl LibraryResolver {
         (resolved, diagnostics)
     }
 
+    pub fn show_symbol(&self, id: &str) -> Result<LibrarySymbolInfo, String> {
+        let (source, _) = self
+            .symbol_path(id)
+            .ok_or_else(|| format!("cannot resolve symbol library for '{id}'"))?;
+        let asset = self.load_symbol(id).map_err(|error| error.message)?;
+        Ok(LibrarySymbolInfo {
+            id: id.to_string(),
+            source,
+            derived_from: asset.derived_from,
+            properties: symbol_properties(&asset.node),
+            pins: asset.pins,
+        })
+    }
+
     fn load_symbol(&self, id: &str) -> Result<SymbolAsset, AssetError> {
         let Some((path, entry)) = self.symbol_path(id) else {
             return Err(AssetError {
@@ -283,54 +313,7 @@ impl LibraryResolver {
             code: "LIB006",
             message: format!("failed to parse {}: {err}", path.display()),
         })?;
-        let symbol = doc
-            .ast()
-            .symbols
-            .iter()
-            .find(|symbol| symbol.name.as_deref() == Some(entry))
-            .ok_or_else(|| AssetError {
-                code: "LIB001",
-                message: format!("symbol '{id}' is absent from {}", path.display()),
-            })?;
-        if symbol.extends.is_some() {
-            return Err(AssetError {
-                code: "LIB007",
-                message: format!("derived symbol '{id}' is outside v1"),
-            });
-        }
-        let max_unit = symbol
-            .units
-            .iter()
-            .filter_map(|unit| unit.name.as_deref())
-            .filter_map(symbol_unit_number)
-            .max()
-            .unwrap_or(1);
-        if max_unit > 1 {
-            return Err(AssetError {
-                code: "LIB008",
-                message: format!("multi-unit symbol '{id}' is outside v1"),
-            });
-        }
-        let node = find_named_symbol_node(&doc.cst().nodes, entry)
-            .cloned()
-            .ok_or_else(|| AssetError {
-                code: "LIB006",
-                message: format!("cannot extract symbol '{id}'"),
-            })?;
-        let pins = symbol
-            .pins
-            .iter()
-            .chain(symbol.units.iter().flat_map(|unit| unit.pins.iter()))
-            .filter_map(|pin| {
-                Some(ResolvedPin {
-                    number: pin.number.clone()?,
-                    name: pin.name.clone(),
-                    at: pin.at.unwrap_or([0.0, 0.0]),
-                    angle: pin.angle.unwrap_or(0.0),
-                })
-            })
-            .collect();
-        Ok(SymbolAsset { node, pins })
+        resolve_symbol(&doc, entry, id, &mut Vec::new())
     }
 
     fn load_footprint(&self, id: &str) -> Result<FootprintAsset, AssetError> {
@@ -353,6 +336,193 @@ impl LibraryResolver {
             .filter_map(|pad| pad.number.clone())
             .collect();
         Ok(FootprintAsset { node, pads })
+    }
+}
+
+fn resolve_symbol(
+    doc: &SymbolLibDocument,
+    entry: &str,
+    id: &str,
+    stack: &mut Vec<String>,
+) -> Result<SymbolAsset, AssetError> {
+    if stack.iter().any(|name| name == entry) {
+        stack.push(entry.to_string());
+        return Err(AssetError {
+            code: "LIB007",
+            message: format!("derived symbol cycle in '{id}': {}", stack.join(" -> ")),
+        });
+    }
+    let symbol = doc
+        .ast()
+        .symbols
+        .iter()
+        .find(|symbol| symbol.name.as_deref() == Some(entry))
+        .ok_or_else(|| AssetError {
+            code: "LIB001",
+            message: format!("symbol '{id}' is absent from its library"),
+        })?;
+    let node = find_named_symbol_node(&doc.cst().nodes, entry)
+        .cloned()
+        .ok_or_else(|| AssetError {
+            code: "LIB006",
+            message: format!("cannot extract symbol '{id}'"),
+        })?;
+
+    if let Some(base_name) = &symbol.extends {
+        stack.push(entry.to_string());
+        let mut asset = resolve_symbol(doc, base_name, id, stack)?;
+        stack.pop();
+        asset.node = merge_derived_symbol(&asset.node, &node, base_name, entry);
+        asset.derived_from.insert(0, base_name.clone());
+        return Ok(asset);
+    }
+
+    symbol_asset_from_base(symbol, node, id)
+}
+
+fn symbol_asset_from_base(
+    symbol: &Symbol,
+    node: Node,
+    id: &str,
+) -> Result<SymbolAsset, AssetError> {
+    let max_unit = symbol
+        .units
+        .iter()
+        .filter_map(|unit| unit.name.as_deref())
+        .filter_map(symbol_unit_number)
+        .max()
+        .unwrap_or(1);
+    if max_unit > 1 {
+        return Err(AssetError {
+            code: "LIB008",
+            message: format!("multi-unit symbol '{id}' is outside v1"),
+        });
+    }
+    let pins = symbol
+        .pins
+        .iter()
+        .chain(symbol.units.iter().flat_map(|unit| unit.pins.iter()))
+        .filter_map(|pin| {
+            Some(ResolvedPin {
+                number: pin.number.clone()?,
+                name: pin.name.clone(),
+                electrical_type: pin.electrical_type.clone(),
+                graphic_style: pin.graphic_style.clone(),
+                at: pin.at.unwrap_or([0.0, 0.0]),
+                angle: pin.angle.unwrap_or(0.0),
+                hidden: pin.hide,
+            })
+        })
+        .collect();
+    Ok(SymbolAsset {
+        node,
+        pins,
+        derived_from: Vec::new(),
+    })
+}
+
+fn merge_derived_symbol(base: &Node, derived: &Node, base_name: &str, name: &str) -> Node {
+    let mut merged = base.clone();
+    set_node_name(&mut merged, name);
+    let Node::List {
+        items: merged_items,
+        ..
+    } = &mut merged
+    else {
+        return merged;
+    };
+    for child in merged_items.iter_mut().skip(2) {
+        if node_head(child) == Some("symbol")
+            && let Some(unit_name) = node_second(child)
+            && let Some(suffix) = unit_name.strip_prefix(base_name)
+        {
+            set_node_name(child, &format!("{name}{suffix}"));
+        }
+    }
+    let Node::List {
+        items: derived_items,
+        ..
+    } = derived
+    else {
+        return merged;
+    };
+    for child in derived_items.iter().skip(2) {
+        let Some(head) = node_head(child) else {
+            continue;
+        };
+        if head == "extends" {
+            continue;
+        }
+        let existing = if head == "property" {
+            let key = node_second(child);
+            merged_items.iter().position(|candidate| {
+                node_head(candidate) == Some("property") && node_second(candidate) == key
+            })
+        } else {
+            merged_items
+                .iter()
+                .position(|candidate| node_head(candidate) == Some(head))
+        };
+        if let Some(index) = existing {
+            merged_items[index] = child.clone();
+        } else {
+            merged_items.push(child.clone());
+        }
+    }
+    merged
+}
+
+fn symbol_properties(node: &Node) -> BTreeMap<String, String> {
+    let mut properties = BTreeMap::new();
+    let Node::List { items, .. } = node else {
+        return properties;
+    };
+    for child in items {
+        if node_head(child) == Some("property")
+            && let (Some(key), Some(value)) = (node_second(child), node_third(child))
+        {
+            properties.insert(key.to_string(), value.to_string());
+        }
+    }
+    properties
+}
+
+fn set_node_name(node: &mut Node, value: &str) {
+    if let Node::List { items, .. } = node
+        && let Some(Node::Atom { atom, .. }) = items.get_mut(1)
+    {
+        *atom = Atom::Quoted(value.to_string());
+    }
+}
+
+fn node_head(node: &Node) -> Option<&str> {
+    let Node::List { items, .. } = node else {
+        return None;
+    };
+    atom_text(items.first()?)
+}
+
+fn node_second(node: &Node) -> Option<&str> {
+    let Node::List { items, .. } = node else {
+        return None;
+    };
+    atom_text(items.get(1)?)
+}
+
+fn node_third(node: &Node) -> Option<&str> {
+    let Node::List { items, .. } = node else {
+        return None;
+    };
+    atom_text(items.get(2)?)
+}
+
+fn atom_text(node: &Node) -> Option<&str> {
+    match node {
+        Node::Atom {
+            atom: Atom::Quoted(value) | Atom::Symbol(value),
+            ..
+        } => Some(value),
+        _ => None,
     }
 }
 
@@ -408,4 +578,66 @@ fn global_config_dirs() -> Vec<PathBuf> {
         );
     }
     dirs
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kiutils_sexpr::Span;
+
+    const ZERO: Span = Span { start: 0, end: 0 };
+
+    fn symbol(value: &str) -> Node {
+        Node::Atom {
+            atom: Atom::Symbol(value.to_string()),
+            span: ZERO,
+        }
+    }
+
+    fn quoted(value: &str) -> Node {
+        Node::Atom {
+            atom: Atom::Quoted(value.to_string()),
+            span: ZERO,
+        }
+    }
+
+    fn list(items: Vec<Node>) -> Node {
+        Node::List { items, span: ZERO }
+    }
+
+    #[test]
+    fn derived_symbol_overrides_properties_and_renames_units() {
+        let base = list(vec![
+            symbol("symbol"),
+            quoted("Base"),
+            list(vec![symbol("property"), quoted("Value"), quoted("Base")]),
+            list(vec![symbol("symbol"), quoted("Base_0_1")]),
+            list(vec![symbol("symbol"), quoted("Base_1_1")]),
+        ]);
+        let derived = list(vec![
+            symbol("symbol"),
+            quoted("Child"),
+            list(vec![symbol("extends"), quoted("Base")]),
+            list(vec![symbol("property"), quoted("Value"), quoted("Child")]),
+        ]);
+
+        let merged = merge_derived_symbol(&base, &derived, "Base", "Child");
+        let Node::List { items, .. } = &merged else {
+            unreachable!();
+        };
+
+        assert_eq!(node_second(&merged), Some("Child"));
+        assert!(!items.iter().any(|node| node_head(node) == Some("extends")));
+        assert_eq!(symbol_properties(&merged).get("Value").unwrap(), "Child");
+        assert!(
+            items
+                .iter()
+                .any(|node| node_second(node) == Some("Child_0_1"))
+        );
+        assert!(
+            items
+                .iter()
+                .any(|node| node_second(node) == Some("Child_1_1"))
+        );
+    }
 }

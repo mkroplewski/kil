@@ -72,6 +72,17 @@ enum Commands {
         #[arg(long)]
         module: bool,
     },
+    /// Query the KiCad libraries visible to KIL.
+    Library {
+        #[command(subcommand)]
+        command: LibraryCommands,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum LibraryCommands {
+    /// Show a symbol's inherited properties, pin numbers, names and electrical types.
+    Show { symbol: String },
 }
 
 fn main() -> Result<()> {
@@ -84,6 +95,18 @@ fn main() -> Result<()> {
                 kil_core::schema()
             };
             println!("{}", serde_json::to_string_pretty(&schema)?);
+            Ok(())
+        }
+        Commands::Library {
+            command: LibraryCommands::Show { symbol },
+        } => {
+            let project_dir = std::env::current_dir()?;
+            let resolver = kil_core::library::LibraryResolver::discover(
+                &project_dir,
+                cli.kicad_cli.as_deref(),
+            );
+            let info = resolver.show_symbol(&symbol).map_err(anyhow::Error::msg)?;
+            println!("{}", serde_json::to_string_pretty(&info)?);
             Ok(())
         }
         Commands::Check { file } => finish(

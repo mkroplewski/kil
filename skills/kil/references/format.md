@@ -17,6 +17,8 @@ Declare each component and net once. Schematic and PCB sections should carry geo
 
 Library identifiers use `Library:Entry`, for example `Device:R` and `Resistor_SMD:R_0603_1608Metric`. The environment's KiCad library tables determine whether an entry exists. Let `kil check` resolve symbols, pins, footprints, and pads.
 
+Use `kil library show Library:Entry` before connecting an unfamiliar symbol. It resolves KiCad `extends` chains and reports the effective properties and pins seen by KIL. Do not infer a pin number from a related package or component variant.
+
 ## Coordinates
 
 PCB coordinates are local millimetres relative to the lower-left corner of the board. `+X` points right and `+Y` points up. Positive angles turn counter-clockwise.

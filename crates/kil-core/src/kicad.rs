@@ -881,8 +881,7 @@ fn add_descendant_uuids(project: &KilProject, node: &mut Node, prefix: &str, ord
     let eligible = matches!(
         node_head(node),
         Some(
-            "property"
-                | "fp_line"
+            "fp_line"
                 | "fp_rect"
                 | "fp_circle"
                 | "fp_arc"
@@ -895,7 +894,7 @@ fn add_descendant_uuids(project: &KilProject, node: &mut Node, prefix: &str, ord
                 | "zone"
                 | "group"
         )
-    );
+    ) || is_named_property(node);
     if eligible && let Node::List { items, .. } = node {
         let key = format!("{prefix}/item/{}", *ordinal);
         *ordinal += 1;
@@ -912,6 +911,21 @@ fn add_descendant_uuids(project: &KilProject, node: &mut Node, prefix: &str, ord
             add_descendant_uuids(project, child, prefix, ordinal);
         }
     }
+}
+
+fn is_named_property(node: &Node) -> bool {
+    matches!(
+        node,
+        Node::List { items, .. }
+            if matches!(
+                items.as_slice(),
+                [
+                    Node::Atom { atom: Atom::Symbol(head), .. },
+                    Node::Atom { atom: Atom::Quoted(_), .. },
+                    ..
+                ] if head == "property"
+            )
+    )
 }
 
 fn swap_front_back_layers(node: &mut Node) {
@@ -1104,6 +1118,22 @@ mod tests {
     use std::time::{Duration, Instant};
 
     #[test]
+    fn pad_property_markers_do_not_receive_uuids() {
+        let project: KilProject =
+            serde_json::from_str(include_str!("../../../examples/two-resistors.kil.json")).unwrap();
+        let mut marker = list(vec![sym("property"), sym("pad_prop_mechanical")]);
+        let mut ordinal = 0;
+
+        add_descendant_uuids(&project, &mut marker, "pcb/component/J1", &mut ordinal);
+
+        let Node::List { items, .. } = marker else {
+            unreachable!();
+        };
+        assert_eq!(items.len(), 2);
+        assert_eq!(ordinal, 0);
+    }
+
+    #[test]
     fn golden_files_are_deterministic_and_parse_internally() {
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let cli = PathBuf::from(r"C:\Program Files\KiCad\10.0\bin\kicad-cli.exe");
@@ -1128,6 +1158,20 @@ mod tests {
             first.write_to(&output, &project.project.name).unwrap();
             validate_generated(&output, &project.project.name).unwrap();
         }
+
+        let input = manifest.join("testdata/derived-symbols.kil.json");
+        let source = fs::read_to_string(&input).unwrap();
+        let project: KilProject = serde_json::from_str(&source).unwrap();
+        let resolver = LibraryResolver::discover(input.parent().unwrap(), Some(&cli));
+        let (libraries, diagnostics) = resolver.resolve_all(&project, &input, &source);
+        assert!(diagnostics.is_empty(), "derived-symbols: {diagnostics:#?}");
+        let generated = generate(&project, &libraries);
+        let output = manifest.join("../../target/kil-golden-derived-symbols");
+        if output.exists() {
+            fs::remove_dir_all(&output).unwrap();
+        }
+        generated.write_to(&output, &project.project.name).unwrap();
+        validate_generated(&output, &project.project.name).unwrap();
     }
 
     #[test]
