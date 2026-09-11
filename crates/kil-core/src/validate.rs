@@ -421,7 +421,7 @@ pub fn validate_libraries(
                         file,
                     )
                     .with_help(
-                        "use a pin number or a unique pin name from the referenced KiCad symbol",
+                        "use a physical pin number or an explicit terminal alias declared on the part",
                     ),
                 ),
                 1 => None,

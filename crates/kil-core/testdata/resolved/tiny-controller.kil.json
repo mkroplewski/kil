@@ -1,5 +1,4 @@
 {
-  "$schema": "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-v1.schema.json",
   "format_version": 2,
   "project": {
     "name": "tiny-controller",

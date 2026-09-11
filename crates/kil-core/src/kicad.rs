@@ -105,7 +105,7 @@ fn schematic_node(project: &ResolvedProject, libraries: &ResolvedLibraries) -> N
 
         let instance_uuid = stable_uuid(project, &format!("schematic/component/{view_id}"));
         let value = if component.value.is_empty() {
-            reference.as_str()
+            component.reference.as_str()
         } else {
             component.value.as_str()
         };
@@ -1196,6 +1196,12 @@ mod tests {
             stable_uuid(&renamed, "pcb/component/R1")
         );
         assert!(generate(&renamed, &libraries).pcb.contains("R99"));
+        renamed.components.get_mut("R1").unwrap().value.clear();
+        assert!(
+            generate(&renamed, &libraries)
+                .schematic
+                .contains("(property \"Value\" \"R99\"")
+        );
     }
 
     #[test]
