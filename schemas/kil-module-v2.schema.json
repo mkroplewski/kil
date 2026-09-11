@@ -4,8 +4,16 @@
       "anyOf": [
         {
           "items": {
-            "format": "double",
-            "type": "number"
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+                "type": "string"
+              }
+            ]
           },
           "maxItems": 2,
           "minItems": 2,
@@ -73,12 +81,28 @@
           "$ref": "#/$defs/Anchor"
         },
         "max": {
-          "format": "double",
-          "type": "number"
+          "anyOf": [
+            {
+              "format": "double",
+              "type": "number"
+            },
+            {
+              "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+              "type": "string"
+            }
+          ]
         },
         "preferred": {
-          "default": false,
-          "type": "boolean"
+          "anyOf": [
+            {
+              "default": false,
+              "type": "boolean"
+            },
+            {
+              "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+              "type": "string"
+            }
+          ]
         },
         "to": {
           "$ref": "#/$defs/Anchor"
@@ -95,13 +119,29 @@
       "additionalProperties": false,
       "properties": {
         "edge": {
-          "format": "uint",
-          "minimum": 0,
-          "type": "integer"
+          "anyOf": [
+            {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+              "type": "string"
+            }
+          ]
         },
         "fraction": {
-          "format": "double",
-          "type": "number"
+          "anyOf": [
+            {
+              "format": "double",
+              "type": "number"
+            },
+            {
+              "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+              "type": "string"
+            }
+          ]
         },
         "offset": {
           "default": [
@@ -109,8 +149,16 @@
             0.0
           ],
           "items": {
-            "format": "double",
-            "type": "number"
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+                "type": "string"
+              }
+            ]
           },
           "maxItems": 2,
           "minItems": 2,
@@ -128,16 +176,32 @@
       "properties": {
         "at": {
           "items": {
-            "format": "double",
-            "type": "number"
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+                "type": "string"
+              }
+            ]
           },
           "maxItems": 2,
           "minItems": 2,
           "type": "array"
         },
         "diameter": {
-          "format": "double",
-          "type": "number"
+          "anyOf": [
+            {
+              "format": "double",
+              "type": "number"
+            },
+            {
+              "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+              "type": "string"
+            }
+          ]
         }
       },
       "required": [
@@ -202,8 +266,16 @@
             0.0
           ],
           "items": {
-            "format": "double",
-            "type": "number"
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+                "type": "string"
+              }
+            ]
           },
           "maxItems": 2,
           "minItems": 2,
@@ -309,8 +381,16 @@
           "default": [],
           "items": {
             "items": {
-              "format": "double",
-              "type": "number"
+              "anyOf": [
+                {
+                  "format": "double",
+                  "type": "number"
+                },
+                {
+                  "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+                  "type": "string"
+                }
+              ]
             },
             "maxItems": 2,
             "minItems": 2,
@@ -334,17 +414,6 @@
           },
           "default": {},
           "type": "object"
-        },
-        "routing": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/RoutingPolicy"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
         },
         "silk": {
           "default": [],
@@ -381,9 +450,17 @@
           "default": "fixed"
         },
         "rotation": {
-          "default": 0.0,
-          "format": "double",
-          "type": "number"
+          "anyOf": [
+            {
+              "default": 0.0,
+              "format": "double",
+              "type": "number"
+            },
+            {
+              "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+              "type": "string"
+            }
+          ]
         },
         "side": {
           "$ref": "#/$defs/BoardSide",
@@ -411,8 +488,16 @@
             0.0
           ],
           "items": {
-            "format": "double",
-            "type": "number"
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+                "type": "string"
+              }
+            ]
           },
           "maxItems": 2,
           "minItems": 2,
@@ -435,8 +520,16 @@
           "type": "string"
         },
         "locked": {
-          "default": false,
-          "type": "boolean"
+          "anyOf": [
+            {
+              "default": false,
+              "type": "boolean"
+            },
+            {
+              "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+              "type": "string"
+            }
+          ]
         },
         "path": {
           "items": {
@@ -458,54 +551,21 @@
       ],
       "type": "object"
     },
-    "RoutingEngine": {
-      "enum": [
-        "kicad-routing-tools"
-      ],
-      "type": "string"
-    },
-    "RoutingPolicy": {
-      "additionalProperties": false,
-      "properties": {
-        "cache": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "engine": {
-          "$ref": "#/$defs/RoutingEngine"
-        },
-        "extra_args": {
-          "default": [],
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "nets": {
-          "default": [
-            "*"
-          ],
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "engine"
-      ],
-      "type": "object"
-    },
     "SchematicLabel": {
       "additionalProperties": false,
       "properties": {
         "at": {
           "items": {
-            "format": "double",
-            "type": "number"
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+                "type": "string"
+              }
+            ]
           },
           "maxItems": 2,
           "minItems": 2,
@@ -515,9 +575,17 @@
           "type": "string"
         },
         "rotation": {
-          "default": 0.0,
-          "format": "double",
-          "type": "number"
+          "anyOf": [
+            {
+              "default": 0.0,
+              "format": "double",
+              "type": "number"
+            },
+            {
+              "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+              "type": "string"
+            }
+          ]
         }
       },
       "required": [
@@ -531,8 +599,16 @@
       "properties": {
         "at": {
           "items": {
-            "format": "double",
-            "type": "number"
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+                "type": "string"
+              }
+            ]
           },
           "maxItems": 2,
           "minItems": 2,
@@ -542,14 +618,30 @@
           "type": "string"
         },
         "rotation": {
-          "default": 0.0,
-          "format": "double",
-          "type": "number"
+          "anyOf": [
+            {
+              "default": 0.0,
+              "format": "double",
+              "type": "number"
+            },
+            {
+              "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+              "type": "string"
+            }
+          ]
         },
         "unit": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
+          "anyOf": [
+            {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+              "type": "string"
+            }
+          ]
         }
       },
       "required": [
@@ -595,8 +687,16 @@
         "path": {
           "items": {
             "items": {
-              "format": "double",
-              "type": "number"
+              "anyOf": [
+                {
+                  "format": "double",
+                  "type": "number"
+                },
+                {
+                  "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+                  "type": "string"
+                }
+              ]
             },
             "maxItems": 2,
             "minItems": 2,
@@ -616,8 +716,16 @@
       "properties": {
         "at": {
           "items": {
-            "format": "double",
-            "type": "number"
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+                "type": "string"
+              }
+            ]
           },
           "maxItems": 2,
           "minItems": 2,
@@ -628,9 +736,17 @@
           "type": "string"
         },
         "rotation": {
-          "default": 0.0,
-          "format": "double",
-          "type": "number"
+          "anyOf": [
+            {
+              "default": 0.0,
+              "format": "double",
+              "type": "number"
+            },
+            {
+              "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+              "type": "string"
+            }
+          ]
         },
         "text": {
           "type": "string"
@@ -651,17 +767,33 @@
             0.0
           ],
           "items": {
-            "format": "double",
-            "type": "number"
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+                "type": "string"
+              }
+            ]
           },
           "maxItems": 2,
           "minItems": 2,
           "type": "array"
         },
         "rotation": {
-          "default": 0.0,
-          "format": "double",
-          "type": "number"
+          "anyOf": [
+            {
+              "default": 0.0,
+              "format": "double",
+              "type": "number"
+            },
+            {
+              "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+              "type": "string"
+            }
+          ]
         }
       },
       "type": "object"
@@ -671,8 +803,16 @@
       "properties": {
         "at": {
           "items": {
-            "format": "double",
-            "type": "number"
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+                "type": "string"
+              }
+            ]
           },
           "maxItems": 2,
           "minItems": 2,
@@ -687,8 +827,16 @@
           ]
         },
         "locked": {
-          "default": false,
-          "type": "boolean"
+          "anyOf": [
+            {
+              "default": false,
+              "type": "boolean"
+            },
+            {
+              "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+              "type": "string"
+            }
+          ]
         },
         "net": {
           "type": "string"
@@ -729,8 +877,16 @@
         "outline": {
           "items": {
             "items": {
-              "format": "double",
-              "type": "number"
+              "anyOf": [
+                {
+                  "format": "double",
+                  "type": "number"
+                },
+                {
+                  "pattern": "^\\$\\{[A-Za-z0-9_-]+\\}$",
+                  "type": "string"
+                }
+              ]
             },
             "maxItems": 2,
             "minItems": 2,
@@ -767,6 +923,7 @@
       }
     },
     "format_version": {
+      "const": 2,
       "format": "uint32",
       "minimum": 0,
       "type": "integer"
@@ -789,7 +946,6 @@
         "outline": [],
         "placement": {},
         "routes": {},
-        "routing": null,
         "silk": [],
         "vias": [],
         "zones": []

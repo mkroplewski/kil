@@ -1,0 +1,11 @@
+{
+  "format_version": 2,
+  "assets": {
+    "footprint:Capacitor_SMD:C_0603_1608Metric": "e50a6ddd644ef5045d07dbf3fbc7ae48f7f4589d058c72abd7358990ca695b0c",
+    "footprint:Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical": "818e56d03abfd5594d636d7aaa80a0b58d8563d5c660cc13dd510985532637ab",
+    "footprint:Package_DIP:DIP-8_W7.62mm": "cfaee03afe8e4bdb4cba3994655c64af12587eeccfe593130f43296f9ffc4205",
+    "symbol:Connector_Generic:Conn_01x04": "16c853967a118d3faff094d5aa187820657ce5a51a5c9a777d5b8c4ae257b1d0",
+    "symbol:Device:C": "22bb122fed5bc6753b5504e8cad59a8b637b2d0cdc5f88c5b061bdc4388e143b",
+    "symbol:MCU_Microchip_ATtiny:ATtiny25V-10P": "8b8d48e8b11f5535a06cb59e5deca99101ea1f2f1381ec7942b0d99ded158b66"
+  }
+}

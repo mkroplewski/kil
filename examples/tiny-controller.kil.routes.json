@@ -1,7 +1,7 @@
 {
-  "format_version": 1,
+  "format_version": 2,
   "project": "tiny-controller",
-  "input_fingerprint": "e8aa5f54482ff8da46bbcddb91931195db66c20525c766220fd4a49a72bd8f9d",
+  "input_fingerprint": "5fca6a290c02504f9557d39f13638ae8d52d9055ee767fb0f2cf965152947a25",
   "engine": {
     "name": "kicad-routing-tools",
     "version": "0.21.4"
@@ -24,7 +24,8 @@
             26.225,
             15.0
           ]
-        ]
+        ],
+        "locked": false
       },
       {
         "layer": "F.Cu",
@@ -38,7 +39,8 @@
             26.225,
             10.0
           ]
-        ]
+        ],
+        "locked": false
       },
       {
         "layer": "F.Cu",
@@ -68,7 +70,8 @@
             26.2,
             10.0
           ]
-        ]
+        ],
+        "locked": false
       }
     ],
     "GND": [
@@ -84,7 +87,8 @@
             27.8,
             10.0
           ]
-        ]
+        ],
+        "locked": false
       },
       {
         "layer": "F.Cu",
@@ -106,7 +110,8 @@
             27.775,
             15.0
           ]
-        ]
+        ],
+        "locked": false
       }
     ],
     "GPIO": [
@@ -150,7 +155,8 @@
             22.6,
             2.4
           ]
-        ]
+        ],
+        "locked": false
       }
     ],
     "RESET": [
@@ -170,7 +176,8 @@
             15.0,
             10.0
           ]
-        ]
+        ],
+        "locked": false
       }
     ]
   },
@@ -182,7 +189,8 @@
         10.0
       ],
       "size": 0.8,
-      "drill": 0.4
+      "drill": 0.4,
+      "locked": false
     }
   ]
 }

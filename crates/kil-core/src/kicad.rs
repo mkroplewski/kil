@@ -14,6 +14,7 @@ const ZERO: Span = Span { start: 0, end: 0 };
 
 #[derive(Debug, Clone)]
 pub struct GeneratedProject {
+    pub design_rules: String,
     pub project: String,
     pub schematic: String,
     pub pcb: String,
@@ -25,6 +26,10 @@ impl GeneratedProject {
         let project_path = directory.join(format!("{name}.kicad_pro"));
         let schematic_path = directory.join(format!("{name}.kicad_sch"));
         let pcb_path = directory.join(format!("{name}.kicad_pcb"));
+        fs::write(
+            directory.join(format!("{name}.kicad_dru")),
+            &self.design_rules,
+        )?;
         fs::write(&project_path, &self.project)?;
         fs::write(&schematic_path, &self.schematic)?;
         fs::write(&pcb_path, &self.pcb)?;
@@ -47,6 +52,7 @@ pub fn generate(project: &ResolvedProject, libraries: &ResolvedLibraries) -> Gen
     .to_canonical_string();
     let project_json = project_json(project);
     GeneratedProject {
+        design_rules: design_rules(project),
         project: project_json,
         schematic,
         pcb,
@@ -105,7 +111,7 @@ fn schematic_node(project: &ResolvedProject, libraries: &ResolvedLibraries) -> N
 
         let instance_uuid = stable_uuid(project, &format!("schematic/component/{view_id}"));
         let value = if component.value.is_empty() {
-            reference.as_str()
+            component.reference.as_str()
         } else {
             component.value.as_str()
         };
@@ -365,7 +371,7 @@ fn pcb_node(project: &ResolvedProject, libraries: &ResolvedLibraries) -> Node {
                     point_list("end", frame.map(segment[1])),
                     list(vec![
                         sym("width"),
-                        num(route.width.unwrap_or(project.rules.track_width)),
+                        num(route.width.unwrap_or(project.rules.width(net))),
                     ]),
                     list(vec![sym("layer"), quoted(&route.layer)]),
                     list(vec![sym("net"), sym(code.to_string())]),
@@ -582,7 +588,11 @@ fn placed_footprint(
     set_property(
         items,
         "Value",
-        if value.is_empty() { reference } else { value },
+        if value.is_empty() {
+            project.components[reference].reference.as_str()
+        } else {
+            value
+        },
     );
     ensure_footprint_property(items, "Datasheet", "");
     ensure_footprint_property(items, "Description", "");
@@ -617,7 +627,7 @@ fn placed_footprint(
                 ]),
             );
         }
-        if placement.side == BoardSide::Back {
+        if placement.side == BoardSide::Back && !matches!(node_head(child), Some("at" | "layer")) {
             mirror_footprint_geometry(child);
             swap_front_back_layers(child);
         }
@@ -627,20 +637,20 @@ fn placed_footprint(
 
 fn project_json(project: &ResolvedProject) -> String {
     let rules = &project.rules;
-    serde_json::to_string_pretty(&json!({
+    let mut output = json!({
         "board": {
             "design_settings": {
-                "defaults": { "board_outline_line_width": 0.05, "copper_line_width": rules.track_width },
+                "defaults": { "board_outline_line_width": 0.05, "copper_line_width": rules.preferred_track_width },
                 "drc_exclusions": [],
                 "meta": { "version": 2 },
                 "rules": {
                     "allow_blind_buried_vias": false,
                     "allow_microvias": false,
                     "min_clearance": rules.clearance,
-                    "min_track_width": rules.track_width,
+                    "min_track_width": rules.minimum_track_width,
                     "min_via_diameter": rules.via_size
                 },
-                "track_widths": [0.0, rules.track_width],
+                "track_widths": [0.0, rules.preferred_track_width],
                 "via_dimensions": [{"diameter": 0.0, "drill": 0.0}, {"diameter": rules.via_size, "drill": rules.via_drill}]
             }
         },
@@ -652,11 +662,11 @@ fn project_json(project: &ResolvedProject) -> String {
         "net_settings": {
             "classes": [{
                 "bus_width": 12, "clearance": rules.clearance, "diff_pair_gap": 0.25,
-                "diff_pair_via_gap": 0.25, "diff_pair_width": rules.track_width,
+                "diff_pair_via_gap": 0.25, "diff_pair_width": rules.preferred_track_width,
                 "line_style": 0, "microvia_diameter": 0.3, "microvia_drill": 0.1,
                 "name": "Default", "pcb_color": "rgba(0, 0, 0, 0.000)",
                 "priority": 2147483647, "schematic_color": "rgba(0, 0, 0, 0.000)",
-                "track_width": rules.track_width, "via_diameter": rules.via_size,
+                "track_width": rules.preferred_track_width, "via_diameter": rules.via_size,
                 "via_drill": rules.via_drill, "wire_width": 6
             }],
             "meta": { "version": 4 }, "net_colors": null,
@@ -666,7 +676,42 @@ fn project_json(project: &ResolvedProject) -> String {
         "schematic": { "meta": { "version": 1 } },
         "sheets": [[stable_uuid(project, "schematic/root").to_string(), "Root"]],
         "text_variables": {}
-    })).expect("JSON serialization cannot fail") + "\n"
+    });
+    for (name, class) in &rules.net_classes {
+        let mut value = output["net_settings"]["classes"][0].clone();
+        value["name"] = json!(name);
+        value["clearance"] = json!(class.clearance);
+        value["track_width"] = json!(class.preferred_track_width);
+        output["net_settings"]["classes"]
+            .as_array_mut()
+            .unwrap()
+            .push(value);
+    }
+    let assignments: serde_json::Map<String, serde_json::Value> = rules
+        .net_classes
+        .iter()
+        .flat_map(|(name, class)| {
+            class
+                .nets
+                .iter()
+                .map(move |net| (schematic_net_name(net), json!([name])))
+        })
+        .collect();
+    output["net_settings"]["netclass_assignments"] = json!(assignments);
+    serde_json::to_string_pretty(&output).expect("JSON serialization cannot fail") + "\n"
+}
+
+fn design_rules(project: &ResolvedProject) -> String {
+    let mut out = String::from("(version 1)\n");
+    for (name, class) in &project.rules.net_classes {
+        out.push_str(&format!("(rule \"{name}-width\" (condition \"A.NetClass == '{name}'\") (constraint track_width (min {})))\n",class.minimum_track_width));
+        for layer in ["F.Cu", "B.Cu"] {
+            if !class.allowed_layers.iter().any(|l| l == layer) {
+                out.push_str(&format!("(rule \"{name}-{layer}\" (condition \"A.NetClass == '{name}'\") (layer \"{layer}\") (constraint disallow track via zone))\n"));
+            }
+        }
+    }
+    out
 }
 
 fn endpoint_position(
@@ -686,7 +731,7 @@ fn endpoint_position(
         .values()
         .find(|p| p.part == reference && (pin.unit == 0 || p.unit == pin.unit))?;
     let local = [pin.at[0], -pin.at[1]];
-    let angle = placement.rotation.to_radians();
+    let angle = (-placement.rotation).to_radians();
     let rotated = [
         angle.cos() * local[0] - angle.sin() * local[1],
         angle.sin() * local[0] + angle.cos() * local[1],

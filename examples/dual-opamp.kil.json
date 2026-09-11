@@ -29,24 +29,24 @@
         "part": "amplifier",
         "unit": 1,
         "at": [
-          70,
-          50
+          76.2,
+          50.8
         ]
       },
       "unit2": {
         "part": "amplifier",
         "unit": 2,
         "at": [
-          100,
-          50
+          106.68,
+          50.8
         ]
       },
       "unit3": {
         "part": "amplifier",
         "unit": 3,
         "at": [
-          130,
-          50
+          137.16,
+          50.8
         ]
       }
     }

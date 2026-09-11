@@ -126,8 +126,9 @@ pub fn load_project(path: &Path) -> LoadedProject {
             diagnostics.extend(
                 validate_basic(&project, path, &source)
                     .into_iter()
-                    .filter(|d| d.code != "PCB003"),
+                    .filter(|d| !matches!(d.code.as_str(), "PCB003" | "SCH001")),
             );
+            remap_diagnostics(&mut diagnostics, &resolution.origins);
             LoadedProject {
                 project: Some(project),
                 source_document: Some(document),
@@ -154,6 +155,32 @@ pub fn load_project(path: &Path) -> LoadedProject {
                     Diagnostic::error("JSON001", err.to_string(), path).with_span(span),
                 ],
             }
+        }
+    }
+}
+
+fn remap_diagnostics(diagnostics: &mut [Diagnostic], origins: &IndexMap<String, Origin>) {
+    for diagnostic in diagnostics {
+        let Some(path) = diagnostic.path.clone() else {
+            continue;
+        };
+        if let Some((id, origin)) = origins
+            .iter()
+            .filter(|(id, _)| {
+                path == format!("/components/{id}")
+                    || path.starts_with(&format!("/components/{id}/"))
+            })
+            .max_by_key(|(id, _)| id.len())
+        {
+            let suffix = &path[format!("/components/{id}").len()..];
+            diagnostic.file = origin.file.display().to_string();
+            diagnostic.path = Some(format!("{}{suffix}", origin.path));
+        } else if path.starts_with("/nets/") {
+            diagnostic.path = Some(format!("/circuit{path}"));
+        }
+        if let Ok(source) = fs::read_to_string(&diagnostic.file) {
+            diagnostic.span =
+                SourceMap::new(&source).span_for_path(diagnostic.path.as_deref().unwrap_or(""));
         }
     }
 }
@@ -203,7 +230,9 @@ pub fn inspect(options: &InspectOptions) -> InspectOutcome {
                 "ref": refdes,
                 "component": component,
                 "nets": nets,
-                "schematic": project.schematic.placement.get(refdes),
+                "schematic": project.schematic.placement.iter().filter(|(_,p)|p.part==*refdes).collect::<IndexMap<_,_>>(),
+                "origin": loaded.origins.get(refdes),
+                "geometry_stage": "preliminary",
                 "pcb": project.pcb.placement.get(refdes)
             })
         })
@@ -246,6 +275,7 @@ pub fn inspect(options: &InspectOptions) -> InspectOutcome {
         };
         Some(json!({
             "kind": "region",
+            "geometry_stage": "preliminary",
             "bounds": [min_x, min_y, max_x, max_y],
             "components": project.pcb.placement.iter().filter(|(_, placement)| inside(&placement.at)).collect::<IndexMap<_, _>>(),
             "routes": project.pcb.routes.iter().filter_map(|(net, routes)| {
@@ -259,6 +289,7 @@ pub fn inspect(options: &InspectOptions) -> InspectOutcome {
     } else {
         Some(json!({
             "kind": "summary",
+            "geometry_stage": "preliminary",
             "project": project.project,
             "components": project.components.len(),
             "nets": project.nets.len(),
@@ -360,6 +391,13 @@ pub fn route(options: &RouteOptions) -> RouteOutcome {
     let resolver = LibraryResolver::discover(project_dir, Some(&cli));
     let (libraries, library_diags) = resolver.resolve_all(&project, &options.input, &loaded.source);
     diagnostics.extend(library_diags);
+    if !has_errors(&diagnostics) {
+        match crate::lock::verify(&options.input, &libraries) {
+            Ok(fingerprint) => project.library_fingerprint = fingerprint,
+            Err(d) => diagnostics.push(*d),
+        }
+    }
+
     diagnostics.extend(crate::layout::resolve_layout(
         &mut project,
         &loaded.layouts,
@@ -373,8 +411,67 @@ pub fn route(options: &RouteOptions) -> RouteOutcome {
         &options.input,
         &loaded.source,
     ));
+    remap_diagnostics(&mut diagnostics, &loaded.origins);
     if has_errors(&diagnostics) {
         return invalid_route(diagnostics, loaded.source);
+    }
+    let selected_nets = if !options.nets.is_empty() {
+        options.nets.clone()
+    } else if let Some(block_id) = &options.block {
+        let Some(block) = loaded.blocks.get(block_id) else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "ROUTE017",
+                    format!("unknown block '{block_id}'"),
+                    &options.input,
+                )
+                .with_help("run 'kil inspect FILE' to list block ids"),
+            );
+            return invalid_route(diagnostics, loaded.source);
+        };
+        block.nets.iter().map(|net| format!("/{net}")).collect()
+    } else {
+        policy.nets.clone()
+    };
+
+    if !project
+        .nets
+        .keys()
+        .any(|n| crate::routing::selected(&selected_nets, n))
+    {
+        diagnostics.push(Diagnostic::error(
+            "ROUTE018",
+            "net selection matches no nets",
+            &options.input,
+        ));
+        return invalid_route(diagnostics, loaded.source);
+    }
+    let routing_input = project.clone();
+    if route_cache_path(&options.input, &project).is_ok_and(|p| p.is_file())
+        && let Err(d) = apply_route_cache(&mut project, &options.input)
+    {
+        let full = project
+            .nets
+            .keys()
+            .all(|n| crate::routing::selected(&selected_nets, n));
+        if !full {
+            diagnostics.push(*d);
+            return invalid_route(diagnostics, loaded.source);
+        }
+    }
+    let route_seed = project.clone();
+    // Copper outside this operation's selection is immutable router input.
+    for (net, routes) in &mut project.pcb.routes {
+        if !crate::routing::selected(&selected_nets, net) {
+            for route in routes {
+                route.locked = true;
+            }
+        }
+    }
+    for via in &mut project.pcb.vias {
+        if !crate::routing::selected(&selected_nets, &via.net) {
+            via.locked = true;
+        }
     }
     let staging = match Builder::new().prefix(".kil-route-").tempdir() {
         Ok(dir) => dir,
@@ -384,6 +481,18 @@ pub fn route(options: &RouteOptions) -> RouteOutcome {
                 format!("cannot create routing staging directory: {err}"),
                 &options.input,
             ));
+            return invalid_route(diagnostics, loaded.source);
+        }
+    };
+    let baseline = staging.path().join("baseline.kicad_pcb");
+    if let Err(e) = fs::write(&baseline, generate(&route_seed, &libraries).pcb) {
+        diagnostics.push(Diagnostic::error("GEN001", e.to_string(), &options.input));
+        return invalid_route(diagnostics, loaded.source);
+    }
+    let before = match extract_route_cache(&route_seed, &baseline, None) {
+        Ok(cache) => cache,
+        Err(e) => {
+            diagnostics.push(Diagnostic::error("ROUTE012", e, &options.input));
             return invalid_route(diagnostics, loaded.source);
         }
     };
@@ -425,24 +534,14 @@ pub fn route(options: &RouteOptions) -> RouteOutcome {
     let routed_board = staging
         .path()
         .join(format!("{}.routed.kicad_pcb", project.project.name));
-    let selected_nets = if !options.nets.is_empty() {
-        options.nets.clone()
-    } else if let Some(block_id) = &options.block {
-        let Some(block) = loaded.blocks.get(block_id) else {
-            diagnostics.push(
-                Diagnostic::error(
-                    "ROUTE017",
-                    format!("unknown block '{block_id}'"),
-                    &options.input,
-                )
-                .with_help("run 'kil inspect FILE' to list block ids"),
-            );
-            return invalid_route(diagnostics, loaded.source);
-        };
-        block.nets.iter().map(|net| format!("/{net}")).collect()
-    } else {
-        policy.nets.clone()
-    };
+
+    let footprint_state = kiutils_kicad::PcbFile::read(&input_board).map(|d| {
+        d.ast()
+            .footprints
+            .iter()
+            .map(|f| (f.reference.clone(), f.at, f.rotation, f.layer.clone()))
+            .collect::<Vec<_>>()
+    });
     let mut command = Command::new(&python);
     command.arg(&router).arg(&input_board).arg(&routed_board);
     if !selected_nets.is_empty() {
@@ -478,6 +577,22 @@ pub fn route(options: &RouteOptions) -> RouteOutcome {
     }
     let router_stdout = String::from_utf8_lossy(&result.stdout);
     diagnostics.extend(router_summary_diagnostics(&router_stdout, &options.input));
+
+    let routed_state = kiutils_kicad::PcbFile::read(&routed_board).map(|d| {
+        d.ast()
+            .footprints
+            .iter()
+            .map(|f| (f.reference.clone(), f.at, f.rotation, f.layer.clone()))
+            .collect::<Vec<_>>()
+    });
+    if footprint_state.ok() != routed_state.ok() {
+        diagnostics.push(Diagnostic::error(
+            "ROUTE019",
+            "router changed footprint placement; placement changes require source edits",
+            &options.input,
+        ));
+        return invalid_route(diagnostics, loaded.source);
+    }
     if let Err(err) = fs::copy(&routed_board, &input_board) {
         diagnostics.push(Diagnostic::error(
             "ROUTE013",
@@ -486,28 +601,46 @@ pub fn route(options: &RouteOptions) -> RouteOutcome {
         ));
         return invalid_route(diagnostics, loaded.source);
     }
-    let validation =
-        validate_with_kicad(&cli, staging.path(), &project.project.name, &options.input);
-    let structural_failure = validation
-        .iter()
-        .any(|diag| diag.severity == Severity::Error && diag.code.starts_with("KICAD"));
-    diagnostics.extend(validation);
-    if structural_failure {
-        return invalid_route(diagnostics, loaded.source);
-    }
     let router_version = router
         .parent()
         .and_then(Path::parent)
         .map(|root| root.join("VERSION"))
         .and_then(|path| fs::read_to_string(path).ok())
         .map(|version| version.trim().to_owned());
-    let cache = match extract_route_cache(&project, &input_board, router_version) {
+    let mut cache = match extract_route_cache(&routing_input, &input_board, router_version) {
         Ok(cache) => cache,
         Err(message) => {
             diagnostics.push(Diagnostic::error("ROUTE012", message, &options.input));
             return invalid_route(diagnostics, loaded.source);
         }
     };
+
+    if let Err(e) = crate::routing::preserve_copper(&before, &mut cache, &selected_nets) {
+        diagnostics.push(Diagnostic::error("ROUTE020", e, &options.input));
+        return invalid_route(diagnostics, loaded.source);
+    }
+    let mut normalized = routing_input.clone();
+    normalized.pcb.routes = cache.routes.clone();
+    normalized.pcb.vias = cache.vias.clone();
+    let normalized_diagnostics = validate_basic(&normalized, &options.input, &loaded.source);
+    if has_errors(&normalized_diagnostics) {
+        diagnostics.extend(normalized_diagnostics);
+        return invalid_route(diagnostics, loaded.source);
+    }
+    if let Err(e) =
+        generate(&normalized, &libraries).write_to(staging.path(), &normalized.project.name)
+    {
+        diagnostics.push(Diagnostic::error("GEN001", e.to_string(), &options.input));
+        return invalid_route(diagnostics, loaded.source);
+    }
+    let validation = validate_with_kicad(&cli, staging.path(), &normalized, &options.input);
+    let invalid = validation
+        .iter()
+        .any(|d| d.severity == Severity::Error && d.code.starts_with("KICAD"));
+    diagnostics.extend(validation);
+    if invalid {
+        return invalid_route(diagnostics, loaded.source);
+    }
     if cache.routes.values().all(Vec::is_empty)
         && cache.vias.is_empty()
         && project.nets.values().any(|endpoints| endpoints.len() >= 2)
@@ -581,6 +714,13 @@ fn run(options: &BuildOptions, publish: bool) -> BuildOutcome {
     let resolver = LibraryResolver::discover(project_dir, Some(&cli));
     let (libraries, library_diags) = resolver.resolve_all(&project, &options.input, &loaded.source);
     diagnostics.extend(library_diags);
+    if !has_errors(&diagnostics) {
+        match crate::lock::verify(&options.input, &libraries) {
+            Ok(fingerprint) => project.library_fingerprint = fingerprint,
+            Err(d) => diagnostics.push(*d),
+        }
+    }
+
     diagnostics.extend(crate::layout::resolve_layout(
         &mut project,
         &loaded.layouts,
@@ -594,6 +734,7 @@ fn run(options: &BuildOptions, publish: bool) -> BuildOutcome {
         &options.input,
         &loaded.source,
     ));
+    remap_diagnostics(&mut diagnostics, &loaded.origins);
     if has_errors(&diagnostics) {
         return invalid(diagnostics, loaded.source);
     }
@@ -656,8 +797,7 @@ fn run(options: &BuildOptions, publish: bool) -> BuildOutcome {
         return invalid(diagnostics, loaded.source);
     }
 
-    let validation =
-        validate_with_kicad(&cli, staging.path(), &project.project.name, &options.input);
+    let validation = validate_with_kicad(&cli, staging.path(), &project, &options.input);
     let structural_failure = validation
         .iter()
         .any(|diag| diag.severity == Severity::Error && diag.code.starts_with("KICAD"));
@@ -694,9 +834,10 @@ fn run(options: &BuildOptions, publish: bool) -> BuildOutcome {
 fn validate_with_kicad(
     cli: &Path,
     directory: &Path,
-    name: &str,
+    project: &ResolvedProject,
     source_file: &Path,
 ) -> Vec<Diagnostic> {
+    let name = &project.project.name;
     let schematic = directory.join(format!("{name}.kicad_sch"));
     let pcb = directory.join(format!("{name}.kicad_pcb"));
     let netlist = directory.join(format!("{name}.net"));
@@ -722,6 +863,16 @@ fn validate_with_kicad(
             &schematic,
         ));
         return out;
+    }
+    match fs::read_to_string(&netlist)
+        .map_err(|e| e.to_string())
+        .and_then(|text| crate::connectivity::verify(project, &text))
+    {
+        Ok(()) => {}
+        Err(message) => {
+            out.push(Diagnostic::error("KICAD006", message, source_file));
+            return out;
+        }
     }
     if let Err(message) = run_command(
         cli,
@@ -803,12 +954,36 @@ fn run_command_extra(
 }
 
 fn read_kicad_report(path: &Path, source_file: &Path, code: &str) -> Vec<Diagnostic> {
-    let Ok(source) = fs::read_to_string(path) else {
-        return Vec::new();
+    let source = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            return vec![Diagnostic::error(
+                "KICAD007",
+                format!("cannot read {code} report: {e}"),
+                source_file,
+            )];
+        }
     };
-    let Ok(value) = serde_json::from_str::<Value>(&source) else {
-        return Vec::new();
+    let value: Value = match serde_json::from_str(&source) {
+        Ok(v) => v,
+        Err(e) => {
+            return vec![Diagnostic::error(
+                "KICAD007",
+                format!("invalid {code} report: {e}"),
+                source_file,
+            )];
+        }
     };
+    if !value.is_object()
+        || !(value.get("violations").is_some_and(Value::is_array)
+            || value.get("sheets").is_some_and(Value::is_array))
+    {
+        return vec![Diagnostic::error(
+            "KICAD007",
+            format!("unrecognized {code} report structure"),
+            source_file,
+        )];
+    }
     let mut out = Vec::new();
     collect_violations(&value, source_file, code, &mut out);
     out
@@ -908,6 +1083,7 @@ fn publish_atomically(staging: &Path, output: &Path, name: &str) -> std::io::Res
     fs::create_dir(&backup)?;
     let names = [
         format!("{name}.kicad_pro"),
+        format!("{name}.kicad_dru"),
         format!("{name}.kicad_sch"),
         format!("{name}.kicad_pcb"),
     ];
@@ -1061,7 +1237,36 @@ pub fn module_schema() -> Value {
     )
 }
 
+fn allow_parameter_values(schema: &mut Value) {
+    match schema {
+        Value::Object(map) => {
+            for child in map.values_mut() {
+                allow_parameter_values(child);
+            }
+            if !map.contains_key("const")
+                && map
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .is_some_and(|t| matches!(t, "number" | "integer" | "boolean"))
+            {
+                let original = std::mem::take(schema);
+                *schema = json!({"anyOf":[original,{"type":"string","pattern":"^\\$\\{[A-Za-z0-9_-]+\\}$"}]});
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                allow_parameter_values(item);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn schema_with_id(mut schema: Value, id: &str) -> Value {
+    schema["properties"]["format_version"]["const"] = json!(2);
+    if id == MODULE_SCHEMA_URL {
+        allow_parameter_values(&mut schema);
+    }
     schema
         .as_object_mut()
         .expect("root schema is an object")
@@ -1073,6 +1278,16 @@ fn schema_with_id(mut schema: Value, id: &str) -> Value {
 mod tests {
     use super::*;
 
+    #[test]
+    fn missing_or_malformed_reports_are_structural_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("report.json");
+        assert_eq!(read_kicad_report(&file, &file, "DRC")[0].code, "KICAD007");
+        for text in ["{broken", "{}", "[]"] {
+            fs::write(&file, text).unwrap();
+            assert_eq!(read_kicad_report(&file, &file, "ERC")[0].code, "KICAD007");
+        }
+    }
     #[cfg(unix)]
     #[test]
     fn bundled_root_follows_symlinked_executable() {

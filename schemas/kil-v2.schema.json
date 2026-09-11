@@ -29,6 +29,23 @@
       ],
       "type": "string"
     },
+    "BuildProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "routing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RoutingPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
     "Circuit": {
       "additionalProperties": false,
       "properties": {
@@ -193,6 +210,46 @@
       ],
       "type": "object"
     },
+    "NetClass": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_layers": {
+          "default": [
+            "F.Cu",
+            "B.Cu"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "clearance": {
+          "format": "double",
+          "type": "number"
+        },
+        "minimum_track_width": {
+          "format": "double",
+          "type": "number"
+        },
+        "nets": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "preferred_track_width": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "nets",
+        "clearance",
+        "minimum_track_width",
+        "preferred_track_width"
+      ],
+      "type": "object"
+    },
     "PadAnchor": {
       "additionalProperties": false,
       "properties": {
@@ -311,17 +368,6 @@
           },
           "default": {},
           "type": "object"
-        },
-        "routing": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/RoutingPolicy"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
         },
         "silk": {
           "default": [],
@@ -509,7 +555,19 @@
           "format": "double",
           "type": "number"
         },
-        "track_width": {
+        "minimum_track_width": {
+          "default": 0.15,
+          "format": "double",
+          "type": "number"
+        },
+        "net_classes": {
+          "additionalProperties": {
+            "$ref": "#/$defs/NetClass"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "preferred_track_width": {
           "default": 0.25,
           "format": "double",
           "type": "number"
@@ -785,6 +843,12 @@
       ],
       "writeOnly": true
     },
+    "build": {
+      "$ref": "#/$defs/BuildProfile",
+      "default": {
+        "routing": null
+      }
+    },
     "circuit": {
       "$ref": "#/$defs/Circuit",
       "default": {
@@ -795,6 +859,7 @@
       }
     },
     "format_version": {
+      "const": 2,
       "format": "uint32",
       "minimum": 0,
       "type": "integer"
@@ -809,7 +874,9 @@
       "$ref": "#/$defs/Rules",
       "default": {
         "clearance": 0.2,
-        "track_width": 0.25,
+        "minimum_track_width": 0.15,
+        "net_classes": {},
+        "preferred_track_width": 0.25,
         "via_drill": 0.4,
         "via_size": 0.8
       }

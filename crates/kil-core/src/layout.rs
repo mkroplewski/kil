@@ -291,26 +291,33 @@ pub fn resolve_layout(
         }
         if strict {
             for (name, c) in &plan.design.constraints {
-                let result = (|| {
+                let anchors: Result<(Point, Point), String> = (|| {
                     if c.max <= 0.0 {
                         return Err("maximum distance must be positive".into());
                     }
-                    let a = context.anchor(&c.from, plan)?;
-                    let b = context.anchor(&c.to, plan)?;
-                    let d = (a[0] - b[0]).hypot(a[1] - b[1]);
-                    if d > c.max + 1e-6 {
-                        Err(format!("distance {d:.6} mm exceeds {} mm", c.max))
-                    } else {
-                        Ok(())
-                    }
+                    Ok((context.anchor(&c.from, plan)?, context.anchor(&c.to, plan)?))
                 })();
-                if let Err(e) = result {
-                    let message = format!("constraint '{}': {e}", id(&plan.prefix, name));
-                    diagnostics.push(if c.preferred {
-                        Diagnostic::warning("LAYOUT004", message, &plan.file)
-                    } else {
-                        Diagnostic::error("LAYOUT004", message, &plan.file)
-                    });
+                match anchors {
+                    Err(e) => diagnostics.push(Diagnostic::error(
+                        "LAYOUT004",
+                        format!("constraint '{}': {e}", id(&plan.prefix, name)),
+                        &plan.file,
+                    )),
+                    Ok((a, b)) => {
+                        let d = (a[0] - b[0]).hypot(a[1] - b[1]);
+                        if d > c.max + 1e-6 {
+                            let message = format!(
+                                "constraint '{}': distance {d:.6} mm exceeds {} mm",
+                                id(&plan.prefix, name),
+                                c.max
+                            );
+                            diagnostics.push(if c.preferred {
+                                Diagnostic::warning("LAYOUT004", message, &plan.file)
+                            } else {
+                                Diagnostic::error("LAYOUT004", message, &plan.file)
+                            });
+                        }
+                    }
                 }
             }
         }

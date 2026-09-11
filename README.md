@@ -32,6 +32,7 @@ Requires KiCad 10 and its symbol and footprint libraries. Building from source r
 ```sh
 cargo install --path crates/kil-cli
 kil inspect examples/two-resistors.kil.json
+kil lock examples/two-resistors.kil.json
 kil check examples/two-resistors.kil.json
 kil build examples/two-resistors.kil.json --out build/divider
 kil library show Amplifier_Operational:LM358
@@ -90,3 +91,32 @@ Pad offsets use the placed part's local board frame; component offsets rotate wi
 Placement `mode` defaults to `fixed`; `preferred` supplies a position without locking it. The compiler resolves these positions deterministically, without an automatic placement optimizer. Named `pcb.constraints` specify `from`, `to`, and positive `max` distance in millimetres. A failed requirement blocks generation; `preferred: true` makes a distance violation a warning. Routes retain explicit `locked` ownership.
 
 See [anchored-divider](examples/anchored-divider.kil.json). Moving R1 moves R2 and both route endpoints. Replacing the footprint resolves those endpoints again instead of retaining copied pad coordinates.
+
+## Build profiles, locks, and routing
+
+Tool selection belongs to `build.routing`, separate from PCB geometry and electrical rules:
+
+```json
+{"build": {"routing": {"engine": "kicad-routing-tools", "nets": ["*"]}}}
+```
+
+Run `kil lock FILE` to accept the current resolved symbol and footprint contents. Commit the adjacent `*.kil.lock.json`. Checks, builds, and routing require a matching lock; library changes require review and another explicit `lock` command. No source document is rewritten by locking.
+
+`kil route FILE` writes a derived `*.kil.routes.json` cache. `--net PATTERN` and `--block ID` select a subset. A targeted pass seeds from the valid cache and preserves unselected copper and its lock flags. Shared nets still span the full board. Stale caches require a full reroute. The router cannot change footprint placement or locked copper. KIL regenerates and checks the board from normalized cached copper before publishing that cache.
+
+Routing fingerprints include resolved library contents, nets, PCB geometry, rules, and routing policy. Schematic placement, values, and printed reference changes do not invalidate copper.
+
+`rules.minimum_track_width` is a requirement. `rules.preferred_track_width` is the routing default. Named `rules.net_classes` declare explicit net membership, clearance, minimum and preferred widths, and allowed copper layers. Class requirements must meet board-wide minimums; multiple class assignments are errors. The compiler checks geometry and emits native KiCad net classes and a `.kicad_dru` file with custom width/layer rules. That fourth file is part of the published project. See KiCad's [custom rule documentation](https://docs.kicad.org/10.0/en/pcbnew/pcbnew.html#custom-design-rules).
+
+Connectivity comes only from `circuit.nets` and `circuit.unconnected`. KIL compares the exported schematic netlist with the resolved circuit. Unexpected connections, including shorts introduced by drawn wires, block publication. Missing or malformed ERC/DRC reports also block publication.
+
+## Explicit integration tests
+
+The ordinary suite uses checked-in library fixtures. Three additional tests require local tools and appear as ignored in ordinary test output:
+
+```sh
+KIL_KICAD_CLI=/path/to/kicad-cli KIL_KRT=/path/to/KiCadRoutingTools \
+  cargo test -p kil-core --test kicad_integration -- --ignored
+```
+
+They verify repeated modules, symbol rotations, back-side pad anchors, an unintended schematic short, sequential routing of two net groups, preservation of copper and lock flags, cache-backed publication, and stale-cache rejection after moving a part. The router test uses a temporary copy of the example.

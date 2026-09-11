@@ -1,7 +1,9 @@
+pub mod connectivity;
 pub mod diagnostic;
 pub mod kicad;
 pub mod layout;
 pub mod library;
+pub mod lock;
 pub mod model;
 pub mod modules;
 pub mod pipeline;

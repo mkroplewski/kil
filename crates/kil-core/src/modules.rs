@@ -32,6 +32,7 @@ pub struct Resolution {
 pub fn resolve(source: &Project, file: &Path) -> Resolution {
     let project = ResolvedProject {
         schema: source.schema.clone(),
+        library_fingerprint: String::new(),
         format_version: source.format_version,
         project: source.project.clone(),
         units: Units::Mm,
@@ -46,7 +47,7 @@ pub fn resolve(source: &Project, file: &Path) -> Resolution {
             zones: vec![],
             holes: vec![],
             silk: vec![],
-            routing: source.pcb.routing.clone(),
+            routing: source.build.routing.clone(),
         },
         rules: source.rules.clone(),
     };
@@ -63,12 +64,21 @@ pub fn resolve(source: &Project, file: &Path) -> Resolution {
         origins: IndexMap::new(),
         diagnostics: vec![],
     };
-    let root = fs::canonicalize(
+    let root = match fs::canonicalize(
         file.parent()
             .filter(|p| !p.as_os_str().is_empty())
             .unwrap_or(Path::new(".")),
-    )
-    .unwrap_or_default();
+    ) {
+        Ok(root) => root,
+        Err(e) => {
+            result.diagnostics.push(Diagnostic::error(
+                "MOD002",
+                format!("cannot resolve project directory: {e}"),
+                file,
+            ));
+            return result;
+        }
+    };
     let mut prefixes = IndexMap::new();
     expand(
         &mut result,
@@ -187,6 +197,27 @@ fn expand(
             ));
             continue;
         }
+        if let Some(reference) = &part.reference {
+            let number = reference
+                .strip_prefix(&part.reference_prefix)
+                .and_then(|n| n.parse::<u32>().ok());
+            if number.is_none_or(|n| n == 0) {
+                r.diagnostics.push(Diagnostic::error("ID004",format!("printed reference '{reference}' must use its prefix followed by a positive integer"),file));
+            }
+        }
+        for (alias, terminal) in &part.terminals {
+            if alias.is_empty()
+                || alias.chars().all(|c| c.is_ascii_digit())
+                || alias.contains(['.', '/'])
+                || terminal.is_empty()
+            {
+                r.diagnostics.push(Diagnostic::error(
+                    "ID005",
+                    format!("invalid terminal alias '{alias}'"),
+                    file,
+                ));
+            }
+        }
         let key = qualify(prefix, id);
         prefixes.insert(key.clone(), part.reference_prefix.clone());
         r.origins.insert(
@@ -213,6 +244,21 @@ fn expand(
         }
     }
     for (name, endpoints) in &circuit.nets {
+        if name.is_empty() || name.contains('/') {
+            r.diagnostics.push(Diagnostic::error(
+                "NET008",
+                "local net names must be nonempty and cannot contain '/'",
+                file,
+            ));
+        }
+        for endpoint in endpoints {
+            if endpoint
+                .split_once('.')
+                .is_none_or(|(part, _)| !circuit.parts.contains_key(part))
+            {
+                r.diagnostics.push(Diagnostic::error("NET009",format!("'{endpoint}' is not a local part terminal; connect instances through their ports"),file));
+            }
+        }
         r.project
             .nets
             .entry(net(name))
@@ -324,6 +370,14 @@ fn expand(
             ));
             continue;
         }
+        if !m.pcb.outline.is_empty() {
+            r.diagnostics.push(Diagnostic::error(
+                "MOD015",
+                "module layouts cannot redefine the board outline",
+                &canonical,
+            ));
+            continue;
+        }
         let key = qualify(prefix, id);
         let mut bindings = IndexMap::new();
         for port in instance.connections.keys() {
@@ -362,7 +416,9 @@ fn expand(
                 )),
             }
         }
-        let st = sch.zip(instance.schematic).map(|(a, b)| compose(a, b));
+        let st = sch
+            .zip(instance.schematic)
+            .map(|(a, b)| compose_schematic(a, b));
         let pt = pcb.zip(instance.pcb).map(|(a, b)| compose(a, b));
         if let Some(t) = pt {
             r.layouts.push(crate::layout::LayoutPlan {
@@ -453,7 +509,7 @@ fn merge_schematic(
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     for (reference, mut placement) in source.placement.drain(..) {
-        placement.at = apply(transform, placement.at);
+        placement.at = apply_schematic(transform, placement.at);
         placement.rotation = normalize_angle(placement.rotation + transform.rotation);
         if target
             .placement
@@ -472,17 +528,33 @@ fn merge_schematic(
         wire.path = wire
             .path
             .into_iter()
-            .map(|point| apply(transform, point))
+            .map(|point| apply_schematic(transform, point))
             .collect();
         target.wires.push(wire);
     }
     for mut label in source.labels {
         label.net = map_net(&label.net);
-        label.at = apply(transform, label.at);
+        label.at = apply_schematic(transform, label.at);
         label.rotation = normalize_angle(label.rotation + transform.rotation);
         target.labels.push(label);
     }
     target.no_connect.extend(source.no_connect);
+}
+
+fn apply_schematic(t: Transform, p: [f64; 2]) -> [f64; 2] {
+    apply(
+        Transform {
+            at: t.at,
+            rotation: -t.rotation,
+        },
+        p,
+    )
+}
+fn compose_schematic(parent: Transform, child: Transform) -> Transform {
+    Transform {
+        at: apply_schematic(parent, child.at),
+        rotation: normalize_angle(parent.rotation + child.rotation),
+    }
 }
 
 fn compose(parent: Transform, child: Transform) -> Transform {

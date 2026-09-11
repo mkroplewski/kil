@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Project {
+    #[serde(default)]
+    pub build: BuildProfile,
     #[serde(rename = "$schema", default, skip_serializing)]
     pub schema: Option<String>,
     pub format_version: u32,
@@ -124,8 +126,6 @@ pub struct PcbDesign {
     pub silk: Vec<SilkText>,
     #[serde(default)]
     pub constraints: IndexMap<String, DistanceConstraint>,
-    #[serde(default)]
-    pub routing: Option<RoutingPolicy>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
@@ -200,4 +200,11 @@ pub struct DistanceConstraint {
     pub max: f64,
     #[serde(default)]
     pub preferred: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BuildProfile {
+    #[serde(default)]
+    pub routing: Option<RoutingPolicy>,
 }

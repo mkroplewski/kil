@@ -33,9 +33,14 @@ pub struct RouterIdentity {
 }
 
 pub fn routing_fingerprint(project: &ResolvedProject) -> String {
-    let encoded = serde_json::to_vec(project).expect("ResolvedProject is serializable");
+    let encoded = serde_json::to_vec(&serde_json::json!({
+        "compiler": env!("CARGO_PKG_VERSION"),
+        "library_fingerprint": project.library_fingerprint,
+        "nets": project.nets, "pcb": project.pcb, "rules": project.rules,
+    }))
+    .expect("routing inputs are serializable");
     let mut hasher = Sha256::new();
-    hasher.update(b"kil-routing-input-v1\0");
+    hasher.update(b"kil-routing-input-v2\0");
     hasher.update(encoded);
     format!("{:x}", hasher.finalize())
 }
@@ -94,7 +99,7 @@ pub fn apply_route_cache(
             &path,
         ))
     })?;
-    if cache.format_version != 1 || cache.project != project.project.name {
+    if cache.format_version != 2 || cache.project != project.project.name {
         return Err(Box::new(Diagnostic::error(
             "ROUTE005",
             "routing cache belongs to another format or project",
@@ -195,7 +200,7 @@ pub fn extract_route_cache(
     }
     vias.sort_by_key(via_sort_key);
     Ok(RouteCache {
-        format_version: 1,
+        format_version: 2,
         project: project.project.name.clone(),
         input_fingerprint: routing_fingerprint(project),
         engine: RouterIdentity {
@@ -477,10 +482,123 @@ fn round_mm(value: f64) -> f64 {
     (value * 1_000_000.0).round() / 1_000_000.0
 }
 
+/// Match root net names with the same '*' and '?' selectors accepted by the CLI.
+pub fn selected(patterns: &[String], net: &str) -> bool {
+    fn matches(p: &[u8], s: &[u8]) -> bool {
+        let mut previous = vec![false; s.len() + 1];
+        previous[0] = true;
+        for &c in p {
+            let mut next = vec![false; s.len() + 1];
+            if c == b'*' {
+                next[0] = previous[0];
+            }
+            for j in 1..=s.len() {
+                next[j] = if c == b'*' {
+                    previous[j] || next[j - 1]
+                } else {
+                    previous[j - 1] && (c == b'?' || c == s[j - 1])
+                };
+            }
+            previous = next;
+        }
+        previous[s.len()]
+    }
+    patterns.iter().any(|p| {
+        matches(
+            p.trim_start_matches('/').as_bytes(),
+            net.trim_start_matches('/').as_bytes(),
+        )
+    })
+}
+/// Restore untouched nets and reject changes to locked copper before publication.
+pub fn preserve_copper(
+    before: &RouteCache,
+    after: &mut RouteCache,
+    patterns: &[String],
+) -> Result<(), String> {
+    for (net, routes) in &before.routes {
+        if !selected(patterns, net) {
+            after.routes.insert(net.clone(), routes.clone());
+            continue;
+        }
+        for route in routes.iter().filter(|r| r.locked) {
+            if !after.routes.get(net).is_some_and(|rs| {
+                rs.iter()
+                    .any(|r| route_sort_key(r) == route_sort_key(route))
+            }) {
+                return Err(format!("router changed locked copper on '{net}'"));
+            }
+        }
+    }
+    after
+        .routes
+        .retain(|net, _| selected(patterns, net) || before.routes.contains_key(net));
+    after.vias.retain(|v| selected(patterns, &v.net));
+    after.vias.extend(
+        before
+            .vias
+            .iter()
+            .filter(|v| !selected(patterns, &v.net))
+            .cloned(),
+    );
+    for via in before
+        .vias
+        .iter()
+        .filter(|v| v.locked && selected(patterns, &v.net))
+    {
+        if !after
+            .vias
+            .iter()
+            .any(|v| via_sort_key(v) == via_sort_key(via))
+        {
+            return Err(format!("router changed a locked via on '{}'", via.net));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[test]
+    fn targeted_routing_preserves_other_nets_and_rejects_locked_changes() {
+        let (project, _) = crate::kicad::tests::fixture();
+        let before = RouteCache {
+            format_version: 2,
+            project: project.project.name.clone(),
+            input_fingerprint: routing_fingerprint(&project),
+            engine: RouterIdentity {
+                name: "test".into(),
+                version: None,
+            },
+            routes: project.pcb.routes.clone(),
+            vias: project.pcb.vias.clone(),
+        };
+        let mut after = before.clone();
+        after.routes.shift_remove("GND");
+        preserve_copper(&before, &mut after, &["SIGNAL".into()]).unwrap();
+        assert_eq!(
+            serde_json::to_value(&before.routes["GND"]).unwrap(),
+            serde_json::to_value(&after.routes["GND"]).unwrap()
+        );
+        let mut before = before;
+        before.routes["SIGNAL"][0].locked = true;
+        after.routes["SIGNAL"].clear();
+        assert!(preserve_copper(&before, &mut after, &["SIGNAL".into()]).is_err());
+        assert!(selected(&["/SIG*".into()], "SIGNAL"));
+        assert!(!selected(&["SIG?".into()], "SIGNAL"));
+    }
+    #[test]
+    fn routing_fingerprint_ignores_schematic_but_tracks_libraries() {
+        let (a, _) = crate::kicad::tests::fixture();
+        let mut b = a.clone();
+        b.schematic.placement["R1"].at = [42., 42.];
+        b.components["R1"].value = "different".into();
+        assert_eq!(routing_fingerprint(&a), routing_fingerprint(&b));
+        b.library_fingerprint = "changed-library-content".into();
+        assert_ne!(routing_fingerprint(&a), routing_fingerprint(&b));
+    }
     #[test]
     fn fingerprint_changes_when_placement_changes() {
         let source = include_str!("../testdata/resolved/two-resistors.kil.json");
@@ -547,7 +665,7 @@ mod tests {
         let input = directory.path().join("controller.kil.json");
         let cache_path = route_cache_path(&input, &project).unwrap();
         let cache = RouteCache {
-            format_version: 1,
+            format_version: 2,
             project: project.project.name.clone(),
             input_fingerprint: "stale".into(),
             engine: RouterIdentity {

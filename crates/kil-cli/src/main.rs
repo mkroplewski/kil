@@ -31,6 +31,8 @@ enum OutputFormat {
 enum Commands {
     /// Validate IL, resolve libraries, generate in a temporary directory and run KiCad checks.
     Check { file: PathBuf },
+    /// Accept the current resolved symbol and footprint contents.
+    Lock { file: PathBuf },
     /// Compile and publish a KiCad project.
     Build {
         file: PathBuf,
@@ -46,7 +48,7 @@ enum Commands {
         /// Override the bundled Python environment used by KiCadRoutingTools.
         #[arg(long)]
         python: Option<PathBuf>,
-        /// Override pcb.routing.nets; repeat for multiple patterns.
+        /// Override build.routing.nets; repeat for multiple patterns.
         #[arg(long = "net")]
         nets: Vec<String>,
         /// Route all nets owned by one imported block.
@@ -66,7 +68,7 @@ enum Commands {
         #[arg(long, num_args = 4, conflicts_with_all = ["component", "net", "block"])]
         region: Option<Vec<f64>>,
     },
-    /// Print the JSON Schema for format_version 1.
+    /// Print the JSON Schema for format_version 2.
     Schema {
         /// Print the schema for imported module files instead of root projects.
         #[arg(long)]
@@ -109,6 +111,7 @@ fn main() -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&info)?);
             Ok(())
         }
+        Commands::Lock { file } => finish_lock(&file, cli.kicad_cli.as_deref(), cli.diagnostics),
         Commands::Check { file } => finish(
             kil_core::check(&BuildOptions {
                 input: file,
@@ -162,6 +165,53 @@ fn main() -> Result<()> {
             )
         }
     }
+}
+
+fn finish_lock(
+    file: &std::path::Path,
+    kicad: Option<&std::path::Path>,
+    format: OutputFormat,
+) -> Result<()> {
+    let loaded = kil_core::load_project(file);
+    let mut diagnostics = loaded.diagnostics;
+    let mut lock_file = None;
+    if !diagnostics
+        .iter()
+        .any(|d| d.severity == kil_core::Severity::Error)
+        && let Some(project) = loaded.project
+    {
+        let resolver = kil_core::library::LibraryResolver::discover(
+            file.parent().unwrap_or(std::path::Path::new(".")),
+            kicad,
+        );
+        let (libraries, library_diagnostics) = resolver.resolve_all(&project, file, &loaded.source);
+        diagnostics.extend(library_diagnostics);
+        if !diagnostics
+            .iter()
+            .any(|d| d.severity == kil_core::Severity::Error)
+        {
+            match kil_core::lock::write(file, &libraries) {
+                Ok(path) => lock_file = Some(path),
+                Err(e) => diagnostics.push(kil_core::Diagnostic::error("LOCK004", e, file)),
+            }
+        }
+    }
+    let success = lock_file.is_some();
+    match format {
+        OutputFormat::Json => println!(
+            "{}",
+            serde_json::to_string_pretty(
+                &serde_json::json!({"exit":if success {"success"}else{"invalid"},"diagnostics":diagnostics,"lock_file":lock_file})
+            )?
+        ),
+        OutputFormat::Text => {
+            eprint!("{}", render_text(&diagnostics, Some(&loaded.source)));
+            if let Some(path) = lock_file {
+                println!("locked {}", path.display());
+            }
+        }
+    }
+    std::process::exit(if success { 0 } else { 1 });
 }
 
 fn finish(outcome: BuildOutcome, format: OutputFormat) -> Result<()> {

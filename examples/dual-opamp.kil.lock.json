@@ -1,0 +1,7 @@
+{
+  "format_version": 2,
+  "assets": {
+    "footprint:Package_DIP:DIP-8_W7.62mm": "cfaee03afe8e4bdb4cba3994655c64af12587eeccfe593130f43296f9ffc4205",
+    "symbol:Amplifier_Operational:LM358": "e72795522ecc79729b02bea22b5e0c4ef56fb83ea509af8dd1457085839f8b1a"
+  }
+}

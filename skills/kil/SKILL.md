@@ -44,23 +44,23 @@ Read [references/format.md](references/format.md) when creating a project, chang
 
 ## Editing workflow
 
-Make one coherent source edit that satisfies the request. Keep references stable and use endpoint notation such as `U1.3`. Prefer named pins such as `U1.VCC` only when the library symbol resolves that name unambiguously.
+Make one coherent source edit that satisfies the request. Keep part identities stable and use endpoint notation such as `U1.3`. Use named terminals such as `controller.VCC` only when the part explicitly declares that alias.
 
 Before the first compiler run, verify the common structural requirements together:
 
-- every component has the symbol, footprint, schematic placement, and PCB placement required by the schema;
-- every endpoint appears on at most one net, and intentional unused pins are listed under `schematic.no_connect`;
+- every physical part has a symbol and footprint; place each schematic unit and supply each PCB placement before building;
+- every endpoint appears on at most one net, and intentional unused pins are listed under `circuit.unconnected`;
 - the board outline, rules, zones, holes, and routing policy refer only to declared objects and nets.
 
 Fix all independent diagnostics from a compiler run in one edit. Do not rerun `schema`, broad `inspect`, or unchanged library queries unless a diagnostic makes them relevant.
 
-After editing, run:
+Before the first build, run `kil lock FILE` to record the resolved library contents. Rerun it only to explicitly accept a reviewed library change. After editing, run:
 
 ```console
 kil check path/to/project.kil.json
 ```
 
-For a new autorouted project that declares `pcb.routing` but has no route cache yet, skip this initial `check`; its missing-cache diagnostic is expected. Run `kil route` after the structural review above. The route command validates the source before invoking the router. Then run `kil build` to publish the project. Read the routing reference for incremental or selective routing.
+For a new autorouted project that declares `build.routing` but has no route cache yet, skip this initial `check`; its missing-cache diagnostic is expected. Run `kil route` after the structural review above. The route command validates the source before invoking the router. Then run `kil build` to publish the project. Read the routing reference for incremental or selective routing.
 
 Treat the exit status as part of the result:
 

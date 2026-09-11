@@ -312,7 +312,7 @@ pub fn validate_basic(project: &ResolvedProject, file: &Path, source: &str) -> V
         }
     }
     if project.rules.clearance <= 0.0
-        || project.rules.track_width <= 0.0
+        || project.rules.preferred_track_width <= 0.0
         || project.rules.via_size <= 0.0
         || project.rules.via_drill <= 0.0
         || project.rules.via_drill >= project.rules.via_size
@@ -326,6 +326,106 @@ pub fn validate_basic(project: &ResolvedProject, file: &Path, source: &str) -> V
             "/rules".into(),
         );
     }
+    if project.rules.minimum_track_width <= 0.0
+        || project.rules.preferred_track_width < project.rules.minimum_track_width
+    {
+        push(
+            Diagnostic::error(
+                "RULE002",
+                "preferred width must meet the positive minimum width",
+                file,
+            ),
+            "/rules".into(),
+        );
+    }
+    let mut assigned = BTreeSet::new();
+    for (name, class) in &project.rules.net_classes {
+        if name == "Default"
+            || name.is_empty()
+            || !name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+            || class.minimum_track_width < project.rules.minimum_track_width
+            || class.preferred_track_width < class.minimum_track_width
+            || class.clearance < project.rules.clearance
+            || class.allowed_layers.is_empty()
+            || class
+                .allowed_layers
+                .iter()
+                .any(|l| l != "F.Cu" && l != "B.Cu")
+        {
+            push(
+                Diagnostic::error(
+                    "RULE003",
+                    format!("invalid net class '{name}'; class limits must meet board minimums"),
+                    file,
+                ),
+                format!("/rules/net_classes/{name}"),
+            );
+        }
+        for net in &class.nets {
+            if !project.nets.contains_key(net) || !assigned.insert(net) {
+                push(
+                    Diagnostic::error(
+                        "RULE004",
+                        format!("unknown or multiply assigned net '{net}'"),
+                        file,
+                    ),
+                    format!("/rules/net_classes/{name}"),
+                );
+            }
+        }
+    }
+    for (net, routes) in &project.pcb.routes {
+        for route in routes {
+            let class = project.rules.class(net);
+            let min = class.map_or(project.rules.minimum_track_width, |c| c.minimum_track_width);
+            if route.width.unwrap_or(project.rules.width(net)) < min
+                || class.is_some_and(|c| !c.allowed_layers.contains(&route.layer))
+            {
+                push(
+                    Diagnostic::error(
+                        "RULE005",
+                        format!("route on '{net}' violates width or allowed layer requirements"),
+                        file,
+                    ),
+                    format!("/pcb/routes/{net}"),
+                );
+            }
+        }
+    }
+    for via in &project.pcb.vias {
+        if project
+            .rules
+            .class(&via.net)
+            .is_some_and(|c| c.allowed_layers.len() != 2)
+        {
+            push(
+                Diagnostic::error(
+                    "RULE005",
+                    format!("through via on '{}' crosses a forbidden layer", via.net),
+                    file,
+                ),
+                "/pcb/vias".into(),
+            );
+        }
+    }
+    for zone in &project.pcb.zones {
+        if project
+            .rules
+            .class(&zone.net)
+            .is_some_and(|c| !c.allowed_layers.contains(&zone.layer))
+        {
+            push(
+                Diagnostic::error(
+                    "RULE005",
+                    format!("zone on '{}' uses a forbidden layer", zone.net),
+                    file,
+                ),
+                "/pcb/zones".into(),
+            );
+        }
+    }
     out
 }
 
@@ -338,6 +438,18 @@ pub fn validate_libraries(
     let map = SourceMap::new(source);
     let mut out = Vec::new();
     for (id, resolved) in &libraries.components {
+        for (alias, number) in &project.components[id].aliases {
+            if !resolved.pins.iter().any(|p| p.number == *number) {
+                out.push(
+                    Diagnostic::error(
+                        "LIB009",
+                        format!("alias '{alias}' points to unknown terminal '{number}'"),
+                        file,
+                    )
+                    .at_path(format!("/components/{id}/terminals/{alias}")),
+                );
+            }
+        }
         let mut units = BTreeSet::new();
         for placement in project
             .schematic
@@ -420,9 +532,7 @@ pub fn validate_libraries(
                         format!("symbol pin '{endpoint}' does not exist"),
                         file,
                     )
-                    .with_help(
-                        "use a pin number or a unique pin name from the referenced KiCad symbol",
-                    ),
+                    .with_help("use a pin number or define an explicit terminal alias"),
                 ),
                 1 => None,
                 _ if matches
@@ -538,6 +648,39 @@ fn cross(a: Point, b: Point, p: Point) -> f64 {
 mod tests {
     use super::*;
 
+    #[test]
+    fn net_classes_reject_thin_tracks_and_forbidden_layers() {
+        let (mut project, _) = crate::kicad::tests::fixture();
+        project.rules.net_classes.insert(
+            "signals".into(),
+            crate::model::NetClass {
+                nets: vec!["SIGNAL".into()],
+                clearance: 0.2,
+                minimum_track_width: 0.3,
+                preferred_track_width: 0.4,
+                allowed_layers: vec!["F.Cu".into()],
+            },
+        );
+        project.pcb.routes["SIGNAL"][0].width = Some(0.2);
+        assert!(
+            validate_basic(&project, Path::new("test.json"), "")
+                .iter()
+                .any(|d| d.code == "RULE005")
+        );
+        project.pcb.routes["SIGNAL"][0].width = Some(0.4);
+        project.pcb.routes["SIGNAL"][0].layer = "B.Cu".into();
+        assert!(
+            validate_basic(&project, Path::new("test.json"), "")
+                .iter()
+                .any(|d| d.code == "RULE005")
+        );
+        project.pcb.routes["SIGNAL"][0].layer = "F.Cu".into();
+        assert!(
+            !validate_basic(&project, Path::new("test.json"), "")
+                .iter()
+                .any(|d| d.code == "RULE005")
+        );
+    }
     #[test]
     fn validator_collects_independent_errors() {
         let source = r#"{

@@ -8,9 +8,9 @@
   },
   "rules": {
     "clearance": 0.2,
-    "track_width": 0.25,
     "via_drill": 0.4,
-    "via_size": 0.8
+    "via_size": 0.8,
+    "preferred_track_width": 0.25
   },
   "pcb": {
     "outline": [

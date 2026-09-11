@@ -4,18 +4,20 @@ Read this reference only for routing work. `kil route` uses the KiCadRoutingTool
 
 ## Preconditions
 
-The root PCB needs a routing policy. Query `kil schema` for the current structure. A minimal policy selects the bundled engine and defaults to all nets:
+The root `build.routing` profile selects the router independently of PCB intent. Query `kil schema` for the current structure. A minimal policy selects the bundled engine and defaults to all nets:
 
 ```json
 {
-  "routing": {
-    "engine": "kicad-routing-tools",
-    "nets": ["*"]
+  "build": {
+    "routing": {
+      "engine": "kicad-routing-tools",
+      "nets": ["*"]
+    }
   }
 }
 ```
 
-For an existing project, run `kil check` before routing and fix structural errors first. For a new project that already declares routing but has no cache, run `kil route` directly after the preflight in `SKILL.md`; a preceding check would only report the expected missing cache. The route command validates before invoking the router.
+Run `kil lock FILE` once to accept resolved library contents. For an existing project, run `kil check` before routing and fix structural errors first. For a new project that already declares routing but has no cache, run `kil route` directly after the preflight in `SKILL.md`; a preceding check would only report the expected missing cache. The route command validates before invoking the router.
 
 After a router run, group related placement or rule fixes into one edit before trying again. Do not repeat unchanged schema, library, or whole-project inspection commands. ERC or existing DRC findings may remain if they do not prevent the requested routing work, but record them so new violations are distinguishable.
 
@@ -38,10 +40,10 @@ kil route board.kil.json
 
 ## Route cache
 
-The router works on a temporary KiCad board. `kil` converts accepted copper into `*.kil.routes.json` and fingerprints routing inputs. Never patch this cache manually.
+The router works on a temporary KiCad board. `kil` converts accepted copper into `*.kil.routes.json` and fingerprints routing inputs. Never patch this cache manually. Selected-net routing seeds from a valid cache and preserves other nets and their original lock flags. After a source change makes a cache stale, reroute all nets; a targeted pass must not carry stale copper forward.
 
 After routing, run `kil check` or `kil build`. A stale cache after a placement, net, rule, or seed-route change is an error and must be regenerated.
 
 Treat incomplete pad pairs, open nets, or a successful router process that emits no copper as routing failures. Do not replace a prior valid cache with such a result.
 
-KiCadRoutingTools has no push-and-shove, blind or buried vias, coarse global-routing pass, or region-specific design rules. Review routed output in KiCad for dense boards and report any remaining DRC findings.
+The source format remains two-layer and does not express blind/buried vias or native differential-pair constraints. Review routed output in KiCad and report remaining DRC findings.

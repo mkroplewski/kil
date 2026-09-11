@@ -105,13 +105,7 @@
           25
         ]
       }
-    ],
-    "routing": {
-      "engine": "kicad-routing-tools",
-      "nets": [
-        "*"
-      ]
-    }
+    ]
   },
   "circuit": {
     "parts": {
@@ -207,6 +201,14 @@
         "part": "C2",
         "unit": 1
       }
+    }
+  },
+  "build": {
+    "routing": {
+      "engine": "kicad-routing-tools",
+      "nets": [
+        "*"
+      ]
     }
   }
 }

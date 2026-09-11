@@ -90,7 +90,8 @@ pub fn render_text(diags: &[Diagnostic], source: Option<&str>) -> String {
         let _ = writeln!(out, "{level}[{}]: {}", diag.code, diag.message);
         if let Some(span) = diag.span {
             let _ = writeln!(out, "  --> {}:{}:{}", diag.file, span.line, span.column);
-            if let Some(src) = source
+            let file_source = std::fs::read_to_string(&diag.file).ok();
+            if let Some(src) = file_source.as_deref().or(source)
                 && let Some(line) = src.lines().nth(span.line.saturating_sub(1))
             {
                 let _ = writeln!(out, "   | {line}");

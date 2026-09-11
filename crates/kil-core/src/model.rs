@@ -22,6 +22,8 @@ pub enum Units {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ResolvedProject {
+    #[serde(default)]
+    pub library_fingerprint: String,
     #[serde(rename = "$schema", default, skip_serializing)]
     #[schemars(with = "String")]
     #[schemars(description = "JSON Schema URI used by editors for completion and validation.")]
@@ -270,10 +272,14 @@ fn default_front_silk() -> String {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Rules {
+    #[serde(default = "default_min_width")]
+    pub minimum_track_width: f64,
+    #[serde(default)]
+    pub net_classes: IndexMap<String, NetClass>,
     #[serde(default = "default_clearance")]
     pub clearance: f64,
     #[serde(default = "default_track_width")]
-    pub track_width: f64,
+    pub preferred_track_width: f64,
     #[serde(default = "default_via_size")]
     pub via_size: f64,
     #[serde(default = "default_via_drill")]
@@ -284,7 +290,9 @@ impl Default for Rules {
     fn default() -> Self {
         Self {
             clearance: default_clearance(),
-            track_width: default_track_width(),
+            preferred_track_width: default_track_width(),
+            minimum_track_width: default_min_width(),
+            net_classes: IndexMap::new(),
             via_size: default_via_size(),
             via_drill: default_via_drill(),
         }
@@ -302,4 +310,32 @@ fn default_via_size() -> f64 {
 }
 fn default_via_drill() -> f64 {
     0.4
+}
+
+fn default_min_width() -> f64 {
+    0.15
+}
+fn copper_layers() -> Vec<String> {
+    vec!["F.Cu".into(), "B.Cu".into()]
+}
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct NetClass {
+    pub nets: Vec<String>,
+    pub clearance: f64,
+    pub minimum_track_width: f64,
+    pub preferred_track_width: f64,
+    #[serde(default = "copper_layers")]
+    pub allowed_layers: Vec<String>,
+}
+impl Rules {
+    pub fn class(&self, net: &str) -> Option<&NetClass> {
+        self.net_classes
+            .values()
+            .find(|c| c.nets.iter().any(|n| n == net))
+    }
+    pub fn width(&self, net: &str) -> f64 {
+        self.class(net)
+            .map_or(self.preferred_track_width, |c| c.preferred_track_width)
+    }
 }
