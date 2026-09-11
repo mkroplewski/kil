@@ -1,5 +1,27 @@
 {
   "$defs": {
+    "Anchor": {
+      "anyOf": [
+        {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        {
+          "$ref": "#/$defs/RelativeAnchor"
+        },
+        {
+          "$ref": "#/$defs/PadAnchor"
+        },
+        {
+          "$ref": "#/$defs/EdgeAnchor"
+        }
+      ]
+    },
     "BoardSide": {
       "enum": [
         "front",
@@ -42,6 +64,63 @@
           "type": "array"
         }
       },
+      "type": "object"
+    },
+    "DistanceConstraint": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/Anchor"
+        },
+        "max": {
+          "format": "double",
+          "type": "number"
+        },
+        "preferred": {
+          "default": false,
+          "type": "boolean"
+        },
+        "to": {
+          "$ref": "#/$defs/Anchor"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "max"
+      ],
+      "type": "object"
+    },
+    "EdgeAnchor": {
+      "additionalProperties": false,
+      "properties": {
+        "edge": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "fraction": {
+          "format": "double",
+          "type": "number"
+        },
+        "offset": {
+          "default": [
+            0.0,
+            0.0
+          ],
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        }
+      },
+      "required": [
+        "edge",
+        "fraction"
+      ],
       "type": "object"
     },
     "Hole": {
@@ -114,6 +193,31 @@
       ],
       "type": "object"
     },
+    "PadAnchor": {
+      "additionalProperties": false,
+      "properties": {
+        "offset": {
+          "default": [
+            0.0,
+            0.0
+          ],
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "pad": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "pad"
+      ],
+      "type": "object"
+    },
     "Parameter": {
       "additionalProperties": false,
       "properties": {
@@ -183,9 +287,17 @@
       ],
       "type": "object"
     },
-    "PcbFragment": {
+    "PcbDesign": {
       "additionalProperties": false,
+      "description": "PCB authoring geometry. Anchors resolve after library and module resolution.",
       "properties": {
+        "constraints": {
+          "additionalProperties": {
+            "$ref": "#/$defs/DistanceConstraint"
+          },
+          "default": {},
+          "type": "object"
+        },
         "holes": {
           "default": [],
           "items": {
@@ -193,9 +305,22 @@
           },
           "type": "array"
         },
+        "outline": {
+          "default": [],
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "type": "array"
+        },
         "placement": {
           "additionalProperties": {
-            "$ref": "#/$defs/PcbPlacement"
+            "$ref": "#/$defs/PlacementIntent"
           },
           "default": {},
           "type": "object"
@@ -203,12 +328,23 @@
         "routes": {
           "additionalProperties": {
             "items": {
-              "$ref": "#/$defs/Route"
+              "$ref": "#/$defs/RouteIntent"
             },
             "type": "array"
           },
           "default": {},
           "type": "object"
+        },
+        "routing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RoutingPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "silk": {
           "default": [],
@@ -234,21 +370,15 @@
       },
       "type": "object"
     },
-    "PcbPlacement": {
+    "PlacementIntent": {
       "additionalProperties": false,
       "properties": {
         "at": {
-          "items": {
-            "format": "double",
-            "type": "number"
-          },
-          "maxItems": 2,
-          "minItems": 2,
-          "type": "array"
+          "$ref": "#/$defs/Anchor"
         },
-        "locked": {
-          "default": false,
-          "type": "boolean"
+        "mode": {
+          "$ref": "#/$defs/PlacementMode",
+          "default": "fixed"
         },
         "rotation": {
           "default": 0.0,
@@ -265,7 +395,39 @@
       ],
       "type": "object"
     },
-    "Route": {
+    "PlacementMode": {
+      "enum": [
+        "fixed",
+        "preferred"
+      ],
+      "type": "string"
+    },
+    "RelativeAnchor": {
+      "additionalProperties": false,
+      "properties": {
+        "offset": {
+          "default": [
+            0.0,
+            0.0
+          ],
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "part": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "part"
+      ],
+      "type": "object"
+    },
+    "RouteIntent": {
       "additionalProperties": false,
       "properties": {
         "layer": {
@@ -278,13 +440,7 @@
         },
         "path": {
           "items": {
-            "items": {
-              "format": "double",
-              "type": "number"
-            },
-            "maxItems": 2,
-            "minItems": 2,
-            "type": "array"
+            "$ref": "#/$defs/Anchor"
           },
           "type": "array"
         },
@@ -299,6 +455,47 @@
       },
       "required": [
         "path"
+      ],
+      "type": "object"
+    },
+    "RoutingEngine": {
+      "enum": [
+        "kicad-routing-tools"
+      ],
+      "type": "string"
+    },
+    "RoutingPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "cache": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "engine": {
+          "$ref": "#/$defs/RoutingEngine"
+        },
+        "extra_args": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "nets": {
+          "default": [
+            "*"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "engine"
       ],
       "type": "object"
     },
@@ -585,11 +782,14 @@
       "type": "object"
     },
     "pcb": {
-      "$ref": "#/$defs/PcbFragment",
+      "$ref": "#/$defs/PcbDesign",
       "default": {
+        "constraints": {},
         "holes": [],
+        "outline": [],
         "placement": {},
         "routes": {},
+        "routing": null,
         "silk": [],
         "vias": [],
         "zones": []

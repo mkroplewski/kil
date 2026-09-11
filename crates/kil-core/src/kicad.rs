@@ -618,6 +618,7 @@ fn placed_footprint(
             );
         }
         if placement.side == BoardSide::Back {
+            mirror_footprint_geometry(child);
             swap_front_back_layers(child);
         }
     }
@@ -942,6 +943,39 @@ fn is_named_property(node: &Node) -> bool {
     )
 }
 
+fn mirror_footprint_geometry(node: &mut Node) {
+    if let Node::List { items, .. } = node {
+        let head = items.first().and_then(|n| match n {
+            Node::Atom {
+                atom: Atom::Symbol(s),
+                ..
+            } => Some(s.as_str()),
+            _ => None,
+        });
+        if matches!(head, Some("at" | "xy" | "start" | "end" | "mid" | "center")) {
+            if let Some(Node::Atom {
+                atom: Atom::Symbol(x),
+                ..
+            }) = items.get_mut(1)
+                && let Ok(value) = x.parse::<f64>()
+            {
+                *x = (-value).to_string();
+            }
+            if let Some(Node::Atom {
+                atom: Atom::Symbol(angle),
+                ..
+            }) = items.get_mut(3)
+                && let Ok(value) = angle.parse::<f64>()
+            {
+                *angle = (-value).to_string();
+            }
+        }
+        for child in items.iter_mut().skip(1) {
+            mirror_footprint_geometry(child);
+        }
+    }
+}
+
 fn swap_front_back_layers(node: &mut Node) {
     match node {
         Node::Atom {
@@ -969,6 +1003,7 @@ fn swap_front_back_layers(node: &mut Node) {
         }
         Node::List { items, .. } => {
             for child in items {
+                mirror_footprint_geometry(child);
                 swap_front_back_layers(child);
             }
         }
@@ -1126,7 +1161,7 @@ fn at3(x: f64, y: f64, rotation: f64) -> Node {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::library::LibraryResolver;
     use std::time::{Duration, Instant};
@@ -1148,7 +1183,7 @@ mod tests {
         assert_eq!(ordinal, 0);
     }
 
-    fn fixture() -> (ResolvedProject, ResolvedLibraries) {
+    pub(crate) fn fixture() -> (ResolvedProject, ResolvedLibraries) {
         let project: ResolvedProject =
             serde_json::from_str(include_str!("../testdata/resolved/two-resistors.kil.json"))
                 .unwrap();

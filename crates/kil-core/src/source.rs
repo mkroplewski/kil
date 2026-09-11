@@ -15,7 +15,7 @@ pub struct Project {
     pub circuit: Circuit,
     #[serde(default)]
     pub schematic: SchematicView,
-    pub pcb: Pcb,
+    pub pcb: PcbDesign,
     #[serde(default)]
     pub rules: Rules,
 }
@@ -73,7 +73,7 @@ pub struct Module {
     #[serde(default)]
     pub schematic: SchematicView,
     #[serde(default)]
-    pub pcb: PcbFragment,
+    pub pcb: PcbDesign,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -102,4 +102,102 @@ pub struct Instance {
     pub schematic: Option<Transform>,
     #[serde(default)]
     pub pcb: Option<Transform>,
+}
+
+/// PCB authoring geometry. Anchors resolve after library and module resolution.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PcbDesign {
+    #[serde(default)]
+    pub outline: Vec<Point>,
+    #[serde(default)]
+    pub placement: IndexMap<String, PlacementIntent>,
+    #[serde(default)]
+    pub routes: IndexMap<String, Vec<RouteIntent>>,
+    #[serde(default)]
+    pub vias: Vec<Via>,
+    #[serde(default)]
+    pub zones: Vec<Zone>,
+    #[serde(default)]
+    pub holes: Vec<Hole>,
+    #[serde(default)]
+    pub silk: Vec<SilkText>,
+    #[serde(default)]
+    pub constraints: IndexMap<String, DistanceConstraint>,
+    #[serde(default)]
+    pub routing: Option<RoutingPolicy>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum Anchor {
+    Point(Point),
+    Relative(RelativeAnchor),
+    Pad(PadAnchor),
+    Edge(EdgeAnchor),
+}
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RelativeAnchor {
+    pub part: String,
+    #[serde(default)]
+    pub offset: Point,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PadAnchor {
+    pub pad: String,
+    #[serde(default)]
+    pub offset: Point,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct EdgeAnchor {
+    pub edge: usize,
+    pub fraction: f64,
+    #[serde(default)]
+    pub offset: Point,
+}
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum PlacementMode {
+    #[default]
+    Fixed,
+    Preferred,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PlacementIntent {
+    pub at: Anchor,
+    #[serde(default)]
+    pub rotation: f64,
+    #[serde(default = "front")]
+    pub side: BoardSide,
+    #[serde(default)]
+    pub mode: PlacementMode,
+}
+fn front() -> BoardSide {
+    BoardSide::Front
+}
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RouteIntent {
+    #[serde(default = "front_copper")]
+    pub layer: String,
+    #[serde(default)]
+    pub width: Option<f64>,
+    pub path: Vec<Anchor>,
+    #[serde(default)]
+    pub locked: bool,
+}
+fn front_copper() -> String {
+    "F.Cu".into()
+}
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DistanceConstraint {
+    pub from: Anchor,
+    pub to: Anchor,
+    pub max: f64,
+    #[serde(default)]
+    pub preferred: bool,
 }

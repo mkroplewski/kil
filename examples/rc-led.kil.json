@@ -30,20 +30,23 @@
         "at": [
           5,
           4
-        ]
+        ],
+        "mode": "fixed"
       },
       "D1": {
         "at": [
           5,
           9
-        ]
+        ],
+        "mode": "fixed"
       },
       "C1": {
         "at": [
           13,
           6.5
         ],
-        "rotation": 90
+        "rotation": 90,
+        "mode": "fixed"
       }
     },
     "routes": {

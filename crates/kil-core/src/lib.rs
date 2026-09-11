@@ -1,5 +1,6 @@
 pub mod diagnostic;
 pub mod kicad;
+pub mod layout;
 pub mod library;
 pub mod model;
 pub mod modules;

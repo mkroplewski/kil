@@ -23,6 +23,7 @@ pub struct BlockInfo {
     pub pcb: Transform,
 }
 pub struct Resolution {
+    pub layouts: Vec<crate::layout::LayoutPlan>,
     pub project: ResolvedProject,
     pub blocks: IndexMap<String, BlockInfo>,
     pub origins: IndexMap<String, Origin>,
@@ -37,10 +38,26 @@ pub fn resolve(source: &Project, file: &Path) -> Resolution {
         components: IndexMap::new(),
         nets: IndexMap::new(),
         schematic: Schematic::default(),
-        pcb: source.pcb.clone(),
+        pcb: Pcb {
+            outline: source.pcb.outline.clone(),
+            placement: IndexMap::new(),
+            routes: IndexMap::new(),
+            vias: vec![],
+            zones: vec![],
+            holes: vec![],
+            silk: vec![],
+            routing: source.pcb.routing.clone(),
+        },
         rules: source.rules.clone(),
     };
     let mut result = Resolution {
+        layouts: vec![crate::layout::LayoutPlan {
+            design: source.pcb.clone(),
+            prefix: String::new(),
+            nets: IndexMap::new(),
+            transform: Transform::default(),
+            file: file.into(),
+        }],
         project,
         blocks: IndexMap::new(),
         origins: IndexMap::new(),
@@ -119,6 +136,13 @@ pub fn resolve(source: &Project, file: &Path) -> Resolution {
         .collect();
     result.project.nets = nets;
     result.project.schematic.no_connect = unconnected;
+    let preliminary = crate::layout::resolve_layout(
+        &mut result.project,
+        &result.layouts,
+        &crate::library::ResolvedLibraries::default(),
+        false,
+    );
+    result.diagnostics.extend(preliminary);
     result
 }
 fn qualify(prefix: &str, local: &str) -> String {
@@ -341,21 +365,13 @@ fn expand(
         let st = sch.zip(instance.schematic).map(|(a, b)| compose(a, b));
         let pt = pcb.zip(instance.pcb).map(|(a, b)| compose(a, b));
         if let Some(t) = pt {
-            let mut fragment = m.pcb.clone();
-            fragment.placement = fragment
-                .placement
-                .into_iter()
-                .map(|(id, p)| (qualify(&key, &id), p))
-                .collect();
-            let map = |n: &str| bindings.get(n).cloned().unwrap_or_else(|| qualify(&key, n));
-            merge_pcb(
-                &mut r.project,
-                fragment,
-                t,
-                &map,
-                &canonical,
-                &mut r.diagnostics,
-            );
+            r.layouts.push(crate::layout::LayoutPlan {
+                design: m.pcb.clone(),
+                prefix: key.clone(),
+                nets: bindings.clone(),
+                transform: t,
+                file: canonical.clone(),
+            });
         }
         stack.push(canonical.clone());
         expand(
@@ -467,70 +483,6 @@ fn merge_schematic(
         target.labels.push(label);
     }
     target.no_connect.extend(source.no_connect);
-}
-
-fn merge_pcb(
-    project: &mut ResolvedProject,
-    source: PcbFragment,
-    transform: Transform,
-    map_net: &dyn Fn(&str) -> String,
-    file: &Path,
-    diagnostics: &mut Vec<Diagnostic>,
-) {
-    for (reference, mut placement) in source.placement {
-        placement.at = apply(transform, placement.at);
-        placement.rotation = normalize_angle(placement.rotation + transform.rotation);
-        if project
-            .pcb
-            .placement
-            .insert(reference.clone(), placement)
-            .is_some()
-        {
-            diagnostics.push(Diagnostic::error(
-                "MOD010",
-                format!("duplicate PCB placement for '{reference}'"),
-                file,
-            ));
-        }
-    }
-    for (net, mut routes) in source.routes {
-        for route in &mut routes {
-            route.path = route
-                .path
-                .iter()
-                .map(|point| apply(transform, *point))
-                .collect();
-        }
-        project
-            .pcb
-            .routes
-            .entry(map_net(&net))
-            .or_default()
-            .extend(routes);
-    }
-    for mut via in source.vias {
-        via.net = map_net(&via.net);
-        via.at = apply(transform, via.at);
-        project.pcb.vias.push(via);
-    }
-    for mut zone in source.zones {
-        zone.net = map_net(&zone.net);
-        zone.outline = zone
-            .outline
-            .iter()
-            .map(|point| apply(transform, *point))
-            .collect();
-        project.pcb.zones.push(zone);
-    }
-    for mut hole in source.holes {
-        hole.at = apply(transform, hole.at);
-        project.pcb.holes.push(hole);
-    }
-    for mut silk in source.silk {
-        silk.at = apply(transform, silk.at);
-        silk.rotation = normalize_angle(silk.rotation + transform.rotation);
-        project.pcb.silk.push(silk);
-    }
 }
 
 fn compose(parent: Transform, child: Transform) -> Transform {

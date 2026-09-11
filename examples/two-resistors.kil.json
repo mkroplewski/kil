@@ -30,13 +30,15 @@
         "at": [
           5,
           5
-        ]
+        ],
+        "mode": "fixed"
       },
       "R2": {
         "at": [
           5,
           9
-        ]
+        ],
+        "mode": "fixed"
       }
     },
     "routes": {

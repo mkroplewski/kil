@@ -19,6 +19,7 @@ use tempfile::Builder;
 
 #[derive(Debug, Clone)]
 pub struct LoadedProject {
+    pub layouts: Vec<crate::layout::LayoutPlan>,
     pub source_document: Option<Project>,
     pub origins: IndexMap<String, Origin>,
     pub project: Option<ResolvedProject>,
@@ -105,6 +106,7 @@ pub fn load_project(path: &Path) -> LoadedProject {
             return LoadedProject {
                 project: None,
                 source_document: None,
+                layouts: vec![],
                 origins: IndexMap::new(),
                 blocks: IndexMap::new(),
                 source: String::new(),
@@ -121,10 +123,15 @@ pub fn load_project(path: &Path) -> LoadedProject {
             let resolution = resolve(&document, path);
             let project = resolution.project;
             let mut diagnostics = resolution.diagnostics;
-            diagnostics.extend(validate_basic(&project, path, &source));
+            diagnostics.extend(
+                validate_basic(&project, path, &source)
+                    .into_iter()
+                    .filter(|d| d.code != "PCB003"),
+            );
             LoadedProject {
                 project: Some(project),
                 source_document: Some(document),
+                layouts: resolution.layouts,
                 origins: resolution.origins,
                 blocks: resolution.blocks,
                 source,
@@ -139,6 +146,7 @@ pub fn load_project(path: &Path) -> LoadedProject {
             LoadedProject {
                 project: None,
                 source_document: None,
+                layouts: vec![],
                 origins: IndexMap::new(),
                 blocks: IndexMap::new(),
                 source,
@@ -297,13 +305,13 @@ pub fn inspect(options: &InspectOptions) -> InspectOutcome {
 pub fn route(options: &RouteOptions) -> RouteOutcome {
     let loaded = load_project(&options.input);
     let mut diagnostics = loaded.diagnostics;
-    let Some(project) = loaded.project else {
+    let Some(mut project) = loaded.project else {
         return invalid_route(diagnostics, loaded.source);
     };
     if has_errors(&diagnostics) {
         return invalid_route(diagnostics, loaded.source);
     }
-    let Some(policy) = project.pcb.routing.as_ref() else {
+    let Some(policy) = project.pcb.routing.clone() else {
         diagnostics.push(
             Diagnostic::error(
                 "ROUTE007",
@@ -352,6 +360,13 @@ pub fn route(options: &RouteOptions) -> RouteOutcome {
     let resolver = LibraryResolver::discover(project_dir, Some(&cli));
     let (libraries, library_diags) = resolver.resolve_all(&project, &options.input, &loaded.source);
     diagnostics.extend(library_diags);
+    diagnostics.extend(crate::layout::resolve_layout(
+        &mut project,
+        &loaded.layouts,
+        &libraries,
+        true,
+    ));
+    diagnostics.extend(validate_basic(&project, &options.input, &loaded.source));
     diagnostics.extend(validate_libraries(
         &project,
         &libraries,
@@ -554,17 +569,6 @@ fn run(options: &BuildOptions, publish: bool) -> BuildOutcome {
         return invalid(diagnostics, loaded.source);
     }
 
-    if project.pcb.routing.is_some() {
-        if let Err(diagnostic) = apply_route_cache(&mut project, &options.input) {
-            diagnostics.push(*diagnostic);
-            return invalid(diagnostics, loaded.source);
-        }
-        diagnostics.extend(validate_basic(&project, &options.input, &loaded.source));
-        if has_errors(&diagnostics) {
-            return invalid(diagnostics, loaded.source);
-        }
-    }
-
     let cli = resolve_kicad_cli(options.kicad_cli.as_deref());
     let Some(cli) = cli else {
         diagnostics.push(
@@ -577,6 +581,13 @@ fn run(options: &BuildOptions, publish: bool) -> BuildOutcome {
     let resolver = LibraryResolver::discover(project_dir, Some(&cli));
     let (libraries, library_diags) = resolver.resolve_all(&project, &options.input, &loaded.source);
     diagnostics.extend(library_diags);
+    diagnostics.extend(crate::layout::resolve_layout(
+        &mut project,
+        &loaded.layouts,
+        &libraries,
+        true,
+    ));
+    diagnostics.extend(validate_basic(&project, &options.input, &loaded.source));
     diagnostics.extend(validate_libraries(
         &project,
         &libraries,
@@ -585,6 +596,17 @@ fn run(options: &BuildOptions, publish: bool) -> BuildOutcome {
     ));
     if has_errors(&diagnostics) {
         return invalid(diagnostics, loaded.source);
+    }
+
+    if project.pcb.routing.is_some() {
+        if let Err(diagnostic) = apply_route_cache(&mut project, &options.input) {
+            diagnostics.push(*diagnostic);
+            return invalid(diagnostics, loaded.source);
+        }
+        diagnostics.extend(validate_basic(&project, &options.input, &loaded.source));
+        if has_errors(&diagnostics) {
+            return invalid(diagnostics, loaded.source);
+        }
     }
 
     let output_dir = options.output.clone().unwrap_or_else(|| {

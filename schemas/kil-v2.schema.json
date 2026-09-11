@@ -1,5 +1,27 @@
 {
   "$defs": {
+    "Anchor": {
+      "anyOf": [
+        {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        {
+          "$ref": "#/$defs/RelativeAnchor"
+        },
+        {
+          "$ref": "#/$defs/PadAnchor"
+        },
+        {
+          "$ref": "#/$defs/EdgeAnchor"
+        }
+      ]
+    },
     "BoardSide": {
       "enum": [
         "front",
@@ -42,6 +64,63 @@
           "type": "array"
         }
       },
+      "type": "object"
+    },
+    "DistanceConstraint": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/Anchor"
+        },
+        "max": {
+          "format": "double",
+          "type": "number"
+        },
+        "preferred": {
+          "default": false,
+          "type": "boolean"
+        },
+        "to": {
+          "$ref": "#/$defs/Anchor"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "max"
+      ],
+      "type": "object"
+    },
+    "EdgeAnchor": {
+      "additionalProperties": false,
+      "properties": {
+        "edge": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "fraction": {
+          "format": "double",
+          "type": "number"
+        },
+        "offset": {
+          "default": [
+            0.0,
+            0.0
+          ],
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        }
+      },
+      "required": [
+        "edge",
+        "fraction"
+      ],
       "type": "object"
     },
     "Hole": {
@@ -114,6 +193,31 @@
       ],
       "type": "object"
     },
+    "PadAnchor": {
+      "additionalProperties": false,
+      "properties": {
+        "offset": {
+          "default": [
+            0.0,
+            0.0
+          ],
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "pad": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "pad"
+      ],
+      "type": "object"
+    },
     "Part": {
       "additionalProperties": false,
       "properties": {
@@ -160,9 +264,17 @@
       ],
       "type": "object"
     },
-    "Pcb": {
+    "PcbDesign": {
       "additionalProperties": false,
+      "description": "PCB authoring geometry. Anchors resolve after library and module resolution.",
       "properties": {
+        "constraints": {
+          "additionalProperties": {
+            "$ref": "#/$defs/DistanceConstraint"
+          },
+          "default": {},
+          "type": "object"
+        },
         "holes": {
           "default": [],
           "items": {
@@ -171,6 +283,7 @@
           "type": "array"
         },
         "outline": {
+          "default": [],
           "items": {
             "items": {
               "format": "double",
@@ -184,14 +297,15 @@
         },
         "placement": {
           "additionalProperties": {
-            "$ref": "#/$defs/PcbPlacement"
+            "$ref": "#/$defs/PlacementIntent"
           },
+          "default": {},
           "type": "object"
         },
         "routes": {
           "additionalProperties": {
             "items": {
-              "$ref": "#/$defs/Route"
+              "$ref": "#/$defs/RouteIntent"
             },
             "type": "array"
           },
@@ -231,27 +345,17 @@
           "type": "array"
         }
       },
-      "required": [
-        "outline",
-        "placement"
-      ],
       "type": "object"
     },
-    "PcbPlacement": {
+    "PlacementIntent": {
       "additionalProperties": false,
       "properties": {
         "at": {
-          "items": {
-            "format": "double",
-            "type": "number"
-          },
-          "maxItems": 2,
-          "minItems": 2,
-          "type": "array"
+          "$ref": "#/$defs/Anchor"
         },
-        "locked": {
-          "default": false,
-          "type": "boolean"
+        "mode": {
+          "$ref": "#/$defs/PlacementMode",
+          "default": "fixed"
         },
         "rotation": {
           "default": 0.0,
@@ -267,6 +371,13 @@
         "at"
       ],
       "type": "object"
+    },
+    "PlacementMode": {
+      "enum": [
+        "fixed",
+        "preferred"
+      ],
+      "type": "string"
     },
     "ProjectMeta": {
       "additionalProperties": false,
@@ -293,7 +404,32 @@
       ],
       "type": "object"
     },
-    "Route": {
+    "RelativeAnchor": {
+      "additionalProperties": false,
+      "properties": {
+        "offset": {
+          "default": [
+            0.0,
+            0.0
+          ],
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "part": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "part"
+      ],
+      "type": "object"
+    },
+    "RouteIntent": {
       "additionalProperties": false,
       "properties": {
         "layer": {
@@ -306,13 +442,7 @@
         },
         "path": {
           "items": {
-            "items": {
-              "format": "double",
-              "type": "number"
-            },
-            "maxItems": 2,
-            "minItems": 2,
-            "type": "array"
+            "$ref": "#/$defs/Anchor"
           },
           "type": "array"
         },
@@ -670,7 +800,7 @@
       "type": "integer"
     },
     "pcb": {
-      "$ref": "#/$defs/Pcb"
+      "$ref": "#/$defs/PcbDesign"
     },
     "project": {
       "$ref": "#/$defs/ProjectMeta"
