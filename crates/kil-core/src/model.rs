@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 pub type Point = [f64; 2];
 
 pub const PROJECT_SCHEMA_URL: &str =
-    "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-v1.schema.json";
+    "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-v2.schema.json";
 pub const MODULE_SCHEMA_URL: &str =
-    "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-module-v1.schema.json";
+    "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-module-v2.schema.json";
 
 fn default_units() -> Units {
     Units::Mm
@@ -21,7 +21,7 @@ pub enum Units {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct KilProject {
+pub struct ResolvedProject {
     #[serde(rename = "$schema", default, skip_serializing)]
     #[schemars(with = "String")]
     #[schemars(description = "JSON Schema URI used by editors for completion and validation.")]
@@ -33,54 +33,10 @@ pub struct KilProject {
     pub components: IndexMap<String, Component>,
     pub nets: IndexMap<String, Vec<String>>,
     #[serde(default)]
-    pub imports: Vec<ModuleImport>,
-    #[serde(default)]
     pub schematic: Schematic,
     pub pcb: Pcb,
     #[serde(default)]
     pub rules: Rules,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ModuleFile {
-    #[serde(rename = "$schema", default, skip_serializing)]
-    #[schemars(with = "String")]
-    #[schemars(description = "JSON Schema URI used by editors for completion and validation.")]
-    pub schema: Option<String>,
-    pub format_version: u32,
-    pub module: ModuleMeta,
-    #[serde(default)]
-    pub components: IndexMap<String, Component>,
-    #[serde(default)]
-    pub nets: IndexMap<String, Vec<String>>,
-    #[serde(default)]
-    pub imports: Vec<ModuleImport>,
-    #[serde(default)]
-    pub schematic: Schematic,
-    #[serde(default)]
-    pub pcb: PcbFragment,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ModuleMeta {
-    pub id: String,
-    #[serde(default)]
-    pub title: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ModuleImport {
-    pub id: String,
-    pub path: String,
-    #[serde(default)]
-    pub net_map: IndexMap<String, String>,
-    #[serde(default)]
-    pub schematic: Transform,
-    #[serde(default)]
-    pub pcb: Transform,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
@@ -118,6 +74,9 @@ fn default_kicad_series() -> u32 {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Component {
+    pub reference: String,
+    #[serde(default)]
+    pub aliases: IndexMap<String, String>,
     pub symbol: String,
     #[serde(default)]
     pub value: String,
@@ -142,6 +101,8 @@ pub struct Schematic {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SchematicPlacement {
+    pub part: String,
+    pub unit: u32,
     pub at: Point,
     #[serde(default)]
     pub rotation: f64,

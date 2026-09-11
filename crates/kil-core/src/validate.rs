@@ -1,11 +1,11 @@
 use crate::diagnostic::Diagnostic;
 use crate::library::ResolvedLibraries;
-use crate::model::{KilProject, Point};
+use crate::model::{Point, ResolvedProject};
 use crate::source_map::SourceMap;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-pub fn validate_basic(project: &KilProject, file: &Path, source: &str) -> Vec<Diagnostic> {
+pub fn validate_basic(project: &ResolvedProject, file: &Path, source: &str) -> Vec<Diagnostic> {
     let map = SourceMap::new(source);
     let mut out = Vec::new();
     let mut push = |mut d: Diagnostic, path: String| {
@@ -14,20 +14,20 @@ pub fn validate_basic(project: &KilProject, file: &Path, source: &str) -> Vec<Di
         out.push(d);
     };
 
-    if project.format_version != 1 {
+    if project.format_version != 2 {
         push(
             Diagnostic::error(
                 "KIL001",
                 format!("unsupported format_version {}", project.format_version),
                 file,
             )
-            .with_help("use format_version: 1"),
+            .with_help("use format_version: 2"),
             "/format_version".into(),
         );
     }
     if project.project.kicad != 10 {
         push(
-            Diagnostic::error("KIL002", "v1 targets KiCad 10 only", file),
+            Diagnostic::error("KIL002", "v2 targets KiCad 10 only", file),
             "/project/kicad".into(),
         );
     }
@@ -113,7 +113,12 @@ pub fn validate_basic(project: &KilProject, file: &Path, source: &str) -> Vec<Di
     }
 
     for reference in project.components.keys() {
-        if !project.schematic.placement.contains_key(reference) {
+        if !project
+            .schematic
+            .placement
+            .values()
+            .any(|p| &p.part == reference)
+        {
             push(
                 Diagnostic::error(
                     "SCH001",
@@ -134,7 +139,8 @@ pub fn validate_basic(project: &KilProject, file: &Path, source: &str) -> Vec<Di
             );
         }
     }
-    for reference in project.schematic.placement.keys() {
+    for placement in project.schematic.placement.values() {
+        let reference = &placement.part;
         if !project.components.contains_key(reference) {
             push(
                 Diagnostic::error(
@@ -324,13 +330,75 @@ pub fn validate_basic(project: &KilProject, file: &Path, source: &str) -> Vec<Di
 }
 
 pub fn validate_libraries(
-    project: &KilProject,
+    project: &ResolvedProject,
     libraries: &ResolvedLibraries,
     file: &Path,
     source: &str,
 ) -> Vec<Diagnostic> {
     let map = SourceMap::new(source);
     let mut out = Vec::new();
+    for (id, resolved) in &libraries.components {
+        let mut units = BTreeSet::new();
+        for placement in project
+            .schematic
+            .placement
+            .values()
+            .filter(|p| &p.part == id)
+        {
+            if placement.unit == 0 || !units.insert(placement.unit) {
+                out.push(Diagnostic::error(
+                    "SCH007",
+                    format!("duplicate or zero symbol unit for '{id}'"),
+                    file,
+                ));
+            }
+            if !resolved
+                .pins
+                .iter()
+                .any(|pin| pin.unit == 0 || pin.unit == placement.unit)
+            {
+                out.push(Diagnostic::error(
+                    "SCH008",
+                    format!("unknown symbol unit {} for '{id}'", placement.unit),
+                    file,
+                ));
+            }
+        }
+        for unit in resolved
+            .pins
+            .iter()
+            .map(|pin| pin.unit)
+            .filter(|u| *u > 0)
+            .collect::<BTreeSet<_>>()
+        {
+            if !units.contains(&unit) {
+                out.push(Diagnostic::error(
+                    "SCH009",
+                    format!("missing symbol unit {unit} for '{id}'"),
+                    file,
+                ));
+            }
+        }
+    }
+    let connected: BTreeSet<_> = project.nets.values().flatten().collect();
+    for endpoint in &project.schematic.no_connect {
+        if connected.contains(endpoint) {
+            out.push(Diagnostic::error(
+                "NET007",
+                format!("'{endpoint}' is both connected and intentionally unconnected"),
+                file,
+            ));
+        }
+        if let Some((part, _)) = parse_endpoint(endpoint)
+            && !project.components.contains_key(part)
+        {
+            out.push(Diagnostic::error(
+                "NET003",
+                format!("unknown component '{part}'"),
+                file,
+            ));
+        }
+    }
     for (net, endpoints) in &project.nets {
         for endpoint in endpoints {
             let Some((reference, pin_query)) = parse_endpoint(endpoint) else {
@@ -342,7 +410,7 @@ pub fn validate_libraries(
             let matches = resolved
                 .pins
                 .iter()
-                .filter(|pin| pin.number == pin_query || pin.name.as_deref() == Some(pin_query))
+                .filter(|pin| pin.number == pin_query)
                 .collect::<Vec<_>>();
             let path = format!("/nets/{net}/{endpoint}");
             let mut diag = match matches.len() {
@@ -396,10 +464,7 @@ pub fn validate_libraries(
             continue;
         };
         if let Some(resolved) = libraries.components.get(reference)
-            && !resolved
-                .pins
-                .iter()
-                .any(|p| p.number == pin_query || p.name.as_deref() == Some(pin_query))
+            && !resolved.pins.iter().any(|p| p.number == pin_query)
         {
             let path = format!("/schematic/no_connect/{endpoint}");
             out.push(
@@ -478,12 +543,12 @@ mod tests {
         let source = r#"{
           "format_version": 1,
           "project": { "name": "bad", "kicad": 10 },
-          "components": { "R1": { "symbol": "Device:R", "value": "1k", "footprint": "Resistor_SMD:R_0603_1608Metric" } },
+          "components": { "R1": { "reference": "R1", "symbol": "Device:R", "value": "1k", "footprint": "Resistor_SMD:R_0603_1608Metric" } },
           "nets": { "N": ["MISSING.1"] },
           "schematic": { "placement": {} },
           "pcb": { "outline": [[0,0], [1,0]], "placement": {}, "routes": { "OTHER": [{ "path": [[0,0]] }] } }
         }"#;
-        let project: KilProject = serde_json::from_str(source).unwrap();
+        let project: ResolvedProject = serde_json::from_str(source).unwrap();
         let diagnostics = validate_basic(&project, Path::new("bad.kil.json"), source);
         let codes = diagnostics
             .iter()

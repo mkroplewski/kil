@@ -1,5 +1,5 @@
 use crate::diagnostic::Diagnostic;
-use crate::model::{KilProject, Route, Via};
+use crate::model::{ResolvedProject, Route, Via};
 use indexmap::IndexMap;
 use kiutils_kicad::PcbFile;
 use kiutils_sexpr::{Atom, CstDocument, Node};
@@ -32,15 +32,15 @@ pub struct RouterIdentity {
     pub version: Option<String>,
 }
 
-pub fn routing_fingerprint(project: &KilProject) -> String {
-    let encoded = serde_json::to_vec(project).expect("KilProject is serializable");
+pub fn routing_fingerprint(project: &ResolvedProject) -> String {
+    let encoded = serde_json::to_vec(project).expect("ResolvedProject is serializable");
     let mut hasher = Sha256::new();
     hasher.update(b"kil-routing-input-v1\0");
     hasher.update(encoded);
     format!("{:x}", hasher.finalize())
 }
 
-pub fn route_cache_path(input: &Path, project: &KilProject) -> Result<PathBuf, String> {
+pub fn route_cache_path(input: &Path, project: &ResolvedProject) -> Result<PathBuf, String> {
     let parent = input.parent().unwrap_or_else(|| Path::new("."));
     if let Some(configured) = project
         .pcb
@@ -66,7 +66,7 @@ pub fn route_cache_path(input: &Path, project: &KilProject) -> Result<PathBuf, S
 }
 
 pub fn apply_route_cache(
-    project: &mut KilProject,
+    project: &mut ResolvedProject,
     input: &Path,
 ) -> Result<Option<PathBuf>, Box<Diagnostic>> {
     let Some(_) = project.pcb.routing else {
@@ -113,7 +113,7 @@ pub fn apply_route_cache(
 }
 
 pub fn extract_route_cache(
-    project: &KilProject,
+    project: &ResolvedProject,
     routed_board: &Path,
     engine_version: Option<String>,
 ) -> Result<RouteCache, String> {
@@ -232,7 +232,7 @@ pub fn write_route_cache(path: &Path, cache: &RouteCache) -> Result<(), String> 
     Ok(())
 }
 
-fn normalize_net(project: &KilProject, native: &str) -> String {
+fn normalize_net(project: &ResolvedProject, native: &str) -> String {
     if let Some(stripped) = native.strip_prefix('/')
         && project.nets.contains_key(stripped)
     {
@@ -242,7 +242,7 @@ fn normalize_net(project: &KilProject, native: &str) -> String {
 }
 
 fn resolve_item_net(
-    project: &KilProject,
+    project: &ResolvedProject,
     code: Option<i32>,
     label: Option<&str>,
     net_names: &BTreeMap<i32, String>,
@@ -483,8 +483,8 @@ mod tests {
 
     #[test]
     fn fingerprint_changes_when_placement_changes() {
-        let source = include_str!("../../../examples/two-resistors.kil.json");
-        let first: KilProject = serde_json::from_str(source).unwrap();
+        let source = include_str!("../testdata/resolved/two-resistors.kil.json");
+        let first: ResolvedProject = serde_json::from_str(source).unwrap();
         let mut second = first.clone();
         second.pcb.placement.get_mut("R1").unwrap().at[0] += 0.5;
         assert_ne!(routing_fingerprint(&first), routing_fingerprint(&second));
@@ -492,8 +492,8 @@ mod tests {
 
     #[test]
     fn default_cache_stays_next_to_source() {
-        let source = include_str!("../../../examples/tiny-controller.kil.json");
-        let project: KilProject = serde_json::from_str(source).unwrap();
+        let source = include_str!("../testdata/resolved/tiny-controller.kil.json");
+        let project: ResolvedProject = serde_json::from_str(source).unwrap();
         let path = route_cache_path(Path::new("design/main.kil.json"), &project).unwrap();
         assert_eq!(path, Path::new("design/main.kil.routes.json"));
     }
@@ -516,8 +516,8 @@ mod tests {
 
     #[test]
     fn extracts_krt_string_net_references() {
-        let source = include_str!("../../../examples/two-resistors.kil.json");
-        let project: KilProject = serde_json::from_str(source).unwrap();
+        let source = include_str!("../testdata/resolved/two-resistors.kil.json");
+        let project: ResolvedProject = serde_json::from_str(source).unwrap();
         let directory = tempfile::tempdir().unwrap();
         let board = directory.path().join("router.kicad_pcb");
         fs::write(
@@ -541,8 +541,8 @@ mod tests {
 
     #[test]
     fn stale_cache_is_rejected() {
-        let source = include_str!("../../../examples/tiny-controller.kil.json");
-        let mut project: KilProject = serde_json::from_str(source).unwrap();
+        let source = include_str!("../testdata/resolved/tiny-controller.kil.json");
+        let mut project: ResolvedProject = serde_json::from_str(source).unwrap();
         let directory = tempfile::tempdir().unwrap();
         let input = directory.path().join("controller.kil.json");
         let cache_path = route_cache_path(&input, &project).unwrap();

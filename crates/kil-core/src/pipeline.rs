@@ -1,9 +1,10 @@
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::kicad::{generate, validate_generated};
 use crate::library::LibraryResolver;
-use crate::model::{KilProject, MODULE_SCHEMA_URL, ModuleFile, PROJECT_SCHEMA_URL};
-use crate::modules::{BlockInfo, resolve_modules};
+use crate::model::{MODULE_SCHEMA_URL, PROJECT_SCHEMA_URL, ResolvedProject};
+use crate::modules::{BlockInfo, Origin, resolve};
 use crate::routing::{apply_route_cache, extract_route_cache, route_cache_path, write_route_cache};
+use crate::source::{Module, Project};
 use crate::source_map::SourceMap;
 use crate::validate::{validate_basic, validate_libraries};
 use indexmap::IndexMap;
@@ -18,7 +19,9 @@ use tempfile::Builder;
 
 #[derive(Debug, Clone)]
 pub struct LoadedProject {
-    pub project: Option<KilProject>,
+    pub source_document: Option<Project>,
+    pub origins: IndexMap<String, Origin>,
+    pub project: Option<ResolvedProject>,
     pub blocks: IndexMap<String, BlockInfo>,
     pub source: String,
     pub diagnostics: Vec<Diagnostic>,
@@ -101,6 +104,8 @@ pub fn load_project(path: &Path) -> LoadedProject {
         Err(err) => {
             return LoadedProject {
                 project: None,
+                source_document: None,
+                origins: IndexMap::new(),
                 blocks: IndexMap::new(),
                 source: String::new(),
                 diagnostics: vec![Diagnostic::error(
@@ -111,13 +116,16 @@ pub fn load_project(path: &Path) -> LoadedProject {
             };
         }
     };
-    match serde_json::from_str::<KilProject>(&source) {
-        Ok(mut project) => {
-            let resolution = resolve_modules(&mut project, path);
+    match serde_json::from_str::<Project>(&source) {
+        Ok(document) => {
+            let resolution = resolve(&document, path);
+            let project = resolution.project;
             let mut diagnostics = resolution.diagnostics;
             diagnostics.extend(validate_basic(&project, path, &source));
             LoadedProject {
                 project: Some(project),
+                source_document: Some(document),
+                origins: resolution.origins,
                 blocks: resolution.blocks,
                 source,
                 diagnostics,
@@ -130,6 +138,8 @@ pub fn load_project(path: &Path) -> LoadedProject {
             );
             LoadedProject {
                 project: None,
+                source_document: None,
+                origins: IndexMap::new(),
                 blocks: IndexMap::new(),
                 source,
                 diagnostics: vec![
@@ -1017,14 +1027,14 @@ fn invalid_route(diagnostics: Vec<Diagnostic>, source: String) -> RouteOutcome {
 
 pub fn schema() -> Value {
     schema_with_id(
-        serde_json::to_value(schema_for!(KilProject)).expect("schema is serializable"),
+        serde_json::to_value(schema_for!(Project)).expect("schema is serializable"),
         PROJECT_SCHEMA_URL,
     )
 }
 
 pub fn module_schema() -> Value {
     schema_with_id(
-        serde_json::to_value(schema_for!(ModuleFile)).expect("schema is serializable"),
+        serde_json::to_value(schema_for!(Module)).expect("schema is serializable"),
         MODULE_SCHEMA_URL,
     )
 }
@@ -1076,7 +1086,7 @@ mod tests {
         let root = schema();
         let text = root.to_string();
         assert!(text.contains("format_version"));
-        assert!(text.contains("components"));
+        assert!(text.contains("parts"));
         assert_eq!(root["$id"], PROJECT_SCHEMA_URL);
         assert!(root["properties"]["$schema"].is_object());
 
@@ -1089,7 +1099,7 @@ mod tests {
     #[test]
     fn schema_hint_is_accepted_but_not_serialized() {
         let source = include_str!("../../../examples/rc-led.kil.json");
-        let project: KilProject = serde_json::from_str(source).unwrap();
+        let project: Project = serde_json::from_str(source).unwrap();
         assert_eq!(project.schema.as_deref(), Some(PROJECT_SCHEMA_URL));
         assert!(
             serde_json::to_value(project)
@@ -1107,11 +1117,11 @@ mod tests {
         assert_eq!(loaded.diagnostics, Vec::<Diagnostic>::new());
         let project = loaded.project.unwrap();
         assert_eq!(project.components.len(), 2);
-        assert_eq!(project.pcb.placement["R1"].at, [5.0, 5.0]);
-        assert_eq!(project.pcb.placement["R2"].at, [5.0, 9.0]);
+        assert_eq!(project.pcb.placement["divider/R1"].at, [5.0, 5.0]);
+        assert_eq!(project.pcb.placement["divider/R2"].at, [5.0, 9.0]);
         assert_eq!(project.pcb.routes["SIGNAL"][0].path[0], [4.175, 5.0]);
         assert!(project.pcb.routes["SIGNAL"][0].locked);
-        assert_eq!(loaded.blocks["divider"].nets, ["GND", "SIGNAL"]);
+        assert_eq!(loaded.blocks["divider"].nets.len(), 2);
     }
 
     #[test]

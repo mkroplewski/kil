@@ -23,10 +23,10 @@ jobs:
           cargo +1.90.0 fmt --all -- --check
           cargo +1.90.0 test --workspace --locked
           cargo +1.90.0 clippy --workspace --all-targets --locked -- -D warnings
-          cargo +1.90.0 run --quiet -p kil -- schema > /tmp/kil-v1.schema.json
-          cargo +1.90.0 run --quiet -p kil -- schema --module > /tmp/kil-module-v1.schema.json
-          python3 -c 'import json; assert json.load(open("schemas/kil-v1.schema.json")) == json.load(open("/tmp/kil-v1.schema.json"))'
-          python3 -c 'import json; assert json.load(open("schemas/kil-module-v1.schema.json")) == json.load(open("/tmp/kil-module-v1.schema.json"))'
+          cargo +1.90.0 run --quiet -p kil -- schema > /tmp/kil-v2.schema.json
+          cargo +1.90.0 run --quiet -p kil -- schema --module > /tmp/kil-module-v2.schema.json
+          python3 -c 'import json; assert json.load(open("schemas/kil-v2.schema.json")) == json.load(open("/tmp/kil-v2.schema.json"))'
+          python3 -c 'import json; assert json.load(open("schemas/kil-module-v2.schema.json")) == json.load(open("/tmp/kil-module-v2.schema.json"))'
 
   build:
     name: Build ${{ matrix.target }}

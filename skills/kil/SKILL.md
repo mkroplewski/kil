@@ -14,7 +14,7 @@ Use `kil` as the only compiler and validator for KiCad Intent Language projects.
 - Never hand-edit `*.kil.routes.json`. Only `kil route` may publish a route cache.
 - Preserve strict JSON. Comments, trailing commas, `NaN`, and JSON5 syntax are invalid.
 
-If the request concerns an existing native KiCad project without KIL source, explain that KIL v1 has no importer or round-trip workflow. Do not convert the native files by improvising a parser.
+If the request concerns an existing native KiCad project without KIL source, explain that KIL v2 has no importer or round-trip workflow. Do not convert the native files by improvising a parser.
 
 ## Before editing
 
@@ -72,6 +72,6 @@ Use `kil build` when the user requests generated KiCad files or when finished ar
 
 ## Boundaries
 
-KIL v1 targets KiCad 10, one schematic sheet, single-unit library symbols, library footprints, and two copper layers. It has no importer, round-trip editing, electrical hierarchy, buses, embedded libraries, inner copper layers, or native differential-pair and length-tuning constraints.
+KIL v2 targets KiCad 10, one schematic sheet, single- and multi-unit library symbols, library footprints, and two copper layers. It has no importer, round-trip editing, electrical hierarchy, buses, embedded libraries, inner copper layers, or native differential-pair and length-tuning constraints.
 
 Do not hide these limits by emitting unsupported fields. If the requested design needs an unsupported feature, identify the exact boundary and stop before producing misleading output.

@@ -1,0 +1,82 @@
+{
+  "format_version": 2,
+  "project": {
+    "name": "dual-opamp"
+  },
+  "circuit": {
+    "parts": {
+      "amplifier": {
+        "reference_prefix": "U",
+        "symbol": "Amplifier_Operational:LM358",
+        "footprint": "Package_DIP:DIP-8_W7.62mm",
+        "value": "LM358"
+      }
+    },
+    "unconnected": [
+      "amplifier.1",
+      "amplifier.2",
+      "amplifier.3",
+      "amplifier.4",
+      "amplifier.5",
+      "amplifier.6",
+      "amplifier.7",
+      "amplifier.8"
+    ]
+  },
+  "schematic": {
+    "symbols": {
+      "unit1": {
+        "part": "amplifier",
+        "unit": 1,
+        "at": [
+          70,
+          50
+        ]
+      },
+      "unit2": {
+        "part": "amplifier",
+        "unit": 2,
+        "at": [
+          100,
+          50
+        ]
+      },
+      "unit3": {
+        "part": "amplifier",
+        "unit": 3,
+        "at": [
+          130,
+          50
+        ]
+      }
+    }
+  },
+  "pcb": {
+    "outline": [
+      [
+        0,
+        0
+      ],
+      [
+        30,
+        0
+      ],
+      [
+        30,
+        30
+      ],
+      [
+        0,
+        30
+      ]
+    ],
+    "placement": {
+      "amplifier": {
+        "at": [
+          10,
+          10
+        ]
+      }
+    }
+  }
+}

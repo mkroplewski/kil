@@ -1,29 +1,59 @@
 {
-  "$schema": "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-v1.schema.json",
-  "format_version": 1,
+  "$schema": "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-v2.schema.json",
+  "format_version": 2,
   "project": {
     "name": "modular-resistors",
     "title": "Imported and transformed divider block",
     "kicad": 10
   },
-  "units": "mm",
-  "components": {},
-  "nets": {},
-  "imports": [
-    {
-      "id": "divider",
-      "path": "blocks/divider.kil.json",
-      "net_map": {
-        "SIGNAL": "SIGNAL",
-        "GND": "GND"
-      },
-      "schematic": { "at": [50.8, 50.8] },
-      "pcb": { "at": [5, 5] }
-    }
-  ],
-  "schematic": {},
   "pcb": {
-    "outline": [[0, 0], [12, 0], [12, 14], [0, 14]],
+    "outline": [
+      [
+        0,
+        0
+      ],
+      [
+        12,
+        0
+      ],
+      [
+        12,
+        14
+      ],
+      [
+        0,
+        14
+      ]
+    ],
     "placement": {}
+  },
+  "circuit": {
+    "parts": {},
+    "nets": {},
+    "unconnected": [],
+    "instances": {
+      "divider": {
+        "source": "blocks/divider.kil.json",
+        "connections": {
+          "SIGNAL": "SIGNAL",
+          "GND": "GND"
+        },
+        "schematic": {
+          "at": [
+            50.8,
+            50.8
+          ]
+        },
+        "pcb": {
+          "at": [
+            5,
+            5
+          ]
+        }
+      }
+    }
+  },
+  "schematic": {
+    "symbols": {}
   }
 }

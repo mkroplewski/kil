@@ -1,5 +1,5 @@
 use crate::diagnostic::Diagnostic;
-use crate::model::KilProject;
+use crate::model::ResolvedProject;
 use crate::source_map::SourceMap;
 use indexmap::IndexMap;
 use kiutils_kicad::{
@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ResolvedPin {
+    pub unit: u32,
     pub number: String,
     pub name: Option<String>,
     pub electrical_type: Option<String>,
@@ -205,7 +206,7 @@ impl LibraryResolver {
 
     pub fn resolve_all(
         &self,
-        project: &KilProject,
+        project: &ResolvedProject,
         file: &Path,
         source: &str,
     ) -> (ResolvedLibraries, Vec<Diagnostic>) {
@@ -383,27 +384,23 @@ fn resolve_symbol(
 fn symbol_asset_from_base(
     symbol: &Symbol,
     node: Node,
-    id: &str,
+    _id: &str,
 ) -> Result<SymbolAsset, AssetError> {
-    let max_unit = symbol
-        .units
-        .iter()
-        .filter_map(|unit| unit.name.as_deref())
-        .filter_map(symbol_unit_number)
-        .max()
-        .unwrap_or(1);
-    if max_unit > 1 {
-        return Err(AssetError {
-            code: "LIB008",
-            message: format!("multi-unit symbol '{id}' is outside v1"),
-        });
-    }
     let pins = symbol
         .pins
         .iter()
-        .chain(symbol.units.iter().flat_map(|unit| unit.pins.iter()))
-        .filter_map(|pin| {
+        .map(|pin| (0, pin))
+        .chain(symbol.units.iter().flat_map(|unit| {
+            let number = unit
+                .name
+                .as_deref()
+                .and_then(symbol_unit_number)
+                .unwrap_or(1);
+            unit.pins.iter().map(move |pin| (number, pin))
+        }))
+        .filter_map(|(unit, pin)| {
             Some(ResolvedPin {
+                unit,
                 number: pin.number.clone()?,
                 name: pin.name.clone(),
                 electrical_type: pin.electrical_type.clone(),

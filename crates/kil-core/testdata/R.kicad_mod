@@ -1,0 +1,5 @@
+(footprint "R" (version 20250114) (generator "kil-tests") (layer "F.Cu")
+ (property "Reference" "R" (at 0 -2) (layer "F.SilkS") (effects (font (size 1 1))))
+ (property "Value" "R" (at 0 2) (layer "F.Fab") (effects (font (size 1 1))))
+ (pad "1" smd rect (at -0.825 0) (size 0.8 0.9) (layers "F.Cu" "F.Paste" "F.Mask"))
+ (pad "2" smd rect (at 0.825 0) (size 0.8 0.9) (layers "F.Cu" "F.Paste" "F.Mask")))

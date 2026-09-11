@@ -1,0 +1,203 @@
+{
+  "$schema": "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-v1.schema.json",
+  "format_version": 2,
+  "project": {
+    "name": "tiny-controller",
+    "title": "Small MCU board golden",
+    "kicad": 10
+  },
+  "units": "mm",
+  "components": {
+    "U1": {
+      "symbol": "MCU_Microchip_ATtiny:ATtiny25V-10P",
+      "value": "ATtiny25V-10P",
+      "footprint": "Package_DIP:DIP-8_W7.62mm",
+      "reference": "U1"
+    },
+    "J1": {
+      "symbol": "Connector_Generic:Conn_01x04",
+      "value": "POWER+ISP",
+      "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical",
+      "reference": "J1"
+    },
+    "C1": {
+      "symbol": "Device:C",
+      "value": "100n",
+      "footprint": "Capacitor_SMD:C_0603_1608Metric",
+      "reference": "C1"
+    },
+    "C2": {
+      "symbol": "Device:C",
+      "value": "1u",
+      "footprint": "Capacitor_SMD:C_0603_1608Metric",
+      "reference": "C2"
+    }
+  },
+  "nets": {
+    "VCC": [
+      "U1.8",
+      "J1.1",
+      "C1.1",
+      "C2.1"
+    ],
+    "GND": [
+      "U1.4",
+      "J1.2",
+      "C1.2",
+      "C2.2"
+    ],
+    "GPIO": [
+      "U1.5",
+      "J1.3"
+    ],
+    "RESET": [
+      "U1.1",
+      "J1.4"
+    ]
+  },
+  "schematic": {
+    "placement": {
+      "U1": {
+        "at": [
+          76.2,
+          50.8
+        ],
+        "part": "U1",
+        "unit": 1
+      },
+      "J1": {
+        "at": [
+          45.72,
+          50.8
+        ],
+        "part": "J1",
+        "unit": 1
+      },
+      "C1": {
+        "at": [
+          101.6,
+          45.72
+        ],
+        "part": "C1",
+        "unit": 1
+      },
+      "C2": {
+        "at": [
+          101.6,
+          55.88
+        ],
+        "part": "C2",
+        "unit": 1
+      }
+    },
+    "no_connect": [
+      "U1.2",
+      "U1.3",
+      "U1.6",
+      "U1.7"
+    ]
+  },
+  "pcb": {
+    "outline": [
+      [
+        0,
+        0
+      ],
+      [
+        34,
+        0
+      ],
+      [
+        34,
+        28
+      ],
+      [
+        0,
+        28
+      ]
+    ],
+    "placement": {
+      "J1": {
+        "at": [
+          5,
+          10
+        ]
+      },
+      "U1": {
+        "at": [
+          15,
+          10
+        ]
+      },
+      "C1": {
+        "at": [
+          27,
+          10
+        ]
+      },
+      "C2": {
+        "at": [
+          27,
+          15
+        ]
+      }
+    },
+    "routes": {},
+    "vias": [],
+    "zones": [
+      {
+        "net": "GND",
+        "layer": "B.Cu",
+        "outline": [
+          [
+            0.5,
+            0.5
+          ],
+          [
+            33.5,
+            0.5
+          ],
+          [
+            33.5,
+            27.5
+          ],
+          [
+            0.5,
+            27.5
+          ]
+        ]
+      }
+    ],
+    "holes": [
+      {
+        "at": [
+          3,
+          3
+        ],
+        "diameter": 2.5
+      },
+      {
+        "at": [
+          31,
+          25
+        ],
+        "diameter": 2.5
+      }
+    ],
+    "silk": [
+      {
+        "text": "KIL tiny controller",
+        "at": [
+          17,
+          25
+        ]
+      }
+    ],
+    "routing": {
+      "engine": "kicad-routing-tools",
+      "nets": [
+        "*"
+      ]
+    }
+  }
+}

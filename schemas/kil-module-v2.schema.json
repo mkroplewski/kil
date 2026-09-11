@@ -7,31 +7,41 @@
       ],
       "type": "string"
     },
-    "Component": {
+    "Circuit": {
       "additionalProperties": false,
       "properties": {
-        "fields": {
+        "instances": {
           "additionalProperties": {
-            "type": "string"
+            "$ref": "#/$defs/Instance"
           },
           "default": {},
           "type": "object"
         },
-        "footprint": {
-          "type": "string"
+        "nets": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "default": {},
+          "type": "object"
         },
-        "symbol": {
-          "type": "string"
+        "parts": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Part"
+          },
+          "default": {},
+          "type": "object"
         },
-        "value": {
-          "default": "",
-          "type": "string"
+        "unconnected": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
-      "required": [
-        "symbol",
-        "footprint"
-      ],
       "type": "object"
     },
     "Hole": {
@@ -57,50 +67,123 @@
       ],
       "type": "object"
     },
-    "ModuleImport": {
+    "Instance": {
       "additionalProperties": false,
       "properties": {
-        "id": {
-          "type": "string"
+        "connections": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
         },
-        "net_map": {
+        "parameters": {
+          "additionalProperties": true,
+          "default": {},
+          "type": "object"
+        },
+        "pcb": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Transform"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "schematic": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Transform"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "None omits the supplied view, allowing a parent to place the instance's parts."
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "connections"
+      ],
+      "type": "object"
+    },
+    "Parameter": {
+      "additionalProperties": false,
+      "properties": {
+        "default": {
+          "default": null
+        },
+        "type": {
+          "$ref": "#/$defs/ParameterType"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "ParameterType": {
+      "enum": [
+        "string",
+        "number",
+        "boolean"
+      ],
+      "type": "string"
+    },
+    "Part": {
+      "additionalProperties": false,
+      "properties": {
+        "fields": {
           "additionalProperties": {
             "type": "string"
           },
           "default": {},
           "type": "object"
         },
-        "path": {
+        "footprint": {
           "type": "string"
         },
-        "pcb": {
-          "$ref": "#/$defs/Transform",
-          "default": {
-            "at": [
-              0.0,
-              0.0
-            ],
-            "rotation": 0.0
-          }
+        "reference": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
         },
-        "schematic": {
-          "$ref": "#/$defs/Transform",
-          "default": {
-            "at": [
-              0.0,
-              0.0
-            ],
-            "rotation": 0.0
-          }
+        "reference_prefix": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "terminals": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Explicit aliases for physical terminal numbers. Library display names are not addresses.",
+          "type": "object"
+        },
+        "value": {
+          "default": "",
+          "type": "string"
         }
       },
       "required": [
-        "id",
-        "path"
+        "symbol",
+        "footprint",
+        "reference_prefix"
       ],
       "type": "object"
     },
-    "Pcb": {
+    "PcbFragment": {
       "additionalProperties": false,
       "properties": {
         "holes": {
@@ -110,22 +193,11 @@
           },
           "type": "array"
         },
-        "outline": {
-          "items": {
-            "items": {
-              "format": "double",
-              "type": "number"
-            },
-            "maxItems": 2,
-            "minItems": 2,
-            "type": "array"
-          },
-          "type": "array"
-        },
         "placement": {
           "additionalProperties": {
             "$ref": "#/$defs/PcbPlacement"
           },
+          "default": {},
           "type": "object"
         },
         "routes": {
@@ -137,17 +209,6 @@
           },
           "default": {},
           "type": "object"
-        },
-        "routing": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/RoutingPolicy"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
         },
         "silk": {
           "default": [],
@@ -171,10 +232,6 @@
           "type": "array"
         }
       },
-      "required": [
-        "outline",
-        "placement"
-      ],
       "type": "object"
     },
     "PcbPlacement": {
@@ -205,31 +262,6 @@
       },
       "required": [
         "at"
-      ],
-      "type": "object"
-    },
-    "ProjectMeta": {
-      "additionalProperties": false,
-      "properties": {
-        "kicad": {
-          "default": 10,
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "name": {
-          "type": "string"
-        },
-        "title": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "name"
       ],
       "type": "object"
     },
@@ -268,107 +300,6 @@
       "required": [
         "path"
       ],
-      "type": "object"
-    },
-    "RoutingEngine": {
-      "enum": [
-        "kicad-routing-tools"
-      ],
-      "type": "string"
-    },
-    "RoutingPolicy": {
-      "additionalProperties": false,
-      "properties": {
-        "cache": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "engine": {
-          "$ref": "#/$defs/RoutingEngine"
-        },
-        "extra_args": {
-          "default": [],
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "nets": {
-          "default": [
-            "*"
-          ],
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "engine"
-      ],
-      "type": "object"
-    },
-    "Rules": {
-      "additionalProperties": false,
-      "properties": {
-        "clearance": {
-          "default": 0.2,
-          "format": "double",
-          "type": "number"
-        },
-        "track_width": {
-          "default": 0.25,
-          "format": "double",
-          "type": "number"
-        },
-        "via_drill": {
-          "default": 0.4,
-          "format": "double",
-          "type": "number"
-        },
-        "via_size": {
-          "default": 0.8,
-          "format": "double",
-          "type": "number"
-        }
-      },
-      "type": "object"
-    },
-    "Schematic": {
-      "additionalProperties": false,
-      "properties": {
-        "labels": {
-          "default": [],
-          "items": {
-            "$ref": "#/$defs/SchematicLabel"
-          },
-          "type": "array"
-        },
-        "no_connect": {
-          "default": [],
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "placement": {
-          "additionalProperties": {
-            "$ref": "#/$defs/SchematicPlacement"
-          },
-          "default": {},
-          "type": "object"
-        },
-        "wires": {
-          "default": [],
-          "items": {
-            "$ref": "#/$defs/SchematicWire"
-          },
-          "type": "array"
-        }
-      },
       "type": "object"
     },
     "SchematicLabel": {
@@ -410,15 +341,52 @@
           "minItems": 2,
           "type": "array"
         },
+        "part": {
+          "type": "string"
+        },
         "rotation": {
           "default": 0.0,
           "format": "double",
           "type": "number"
+        },
+        "unit": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "required": [
+        "part",
+        "unit",
         "at"
       ],
+      "type": "object"
+    },
+    "SchematicView": {
+      "additionalProperties": false,
+      "properties": {
+        "labels": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SchematicLabel"
+          },
+          "type": "array"
+        },
+        "symbols": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SchematicPlacement"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "wires": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SchematicWire"
+          },
+          "type": "array"
+        }
+      },
       "type": "object"
     },
     "SchematicWire": {
@@ -501,12 +469,6 @@
       },
       "type": "object"
     },
-    "Units": {
-      "enum": [
-        "mm"
-      ],
-      "type": "string"
-    },
     "Via": {
       "additionalProperties": false,
       "properties": {
@@ -587,78 +549,73 @@
       "type": "object"
     }
   },
-  "$id": "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-v1.schema.json",
+  "$id": "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-module-v2.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
     "$schema": {
-      "description": "JSON Schema URI used by editors for completion and validation.",
-      "type": "string",
+      "type": [
+        "string",
+        "null"
+      ],
       "writeOnly": true
     },
-    "components": {
-      "additionalProperties": {
-        "$ref": "#/$defs/Component"
-      },
-      "type": "object"
+    "circuit": {
+      "$ref": "#/$defs/Circuit",
+      "default": {
+        "instances": {},
+        "nets": {},
+        "parts": {},
+        "unconnected": []
+      }
     },
     "format_version": {
       "format": "uint32",
       "minimum": 0,
       "type": "integer"
     },
-    "imports": {
-      "default": [],
-      "items": {
-        "$ref": "#/$defs/ModuleImport"
-      },
-      "type": "array"
+    "module": {
+      "type": "string"
     },
-    "nets": {
+    "parameters": {
       "additionalProperties": {
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
+        "$ref": "#/$defs/Parameter"
       },
+      "default": {},
       "type": "object"
     },
     "pcb": {
-      "$ref": "#/$defs/Pcb"
-    },
-    "project": {
-      "$ref": "#/$defs/ProjectMeta"
-    },
-    "rules": {
-      "$ref": "#/$defs/Rules",
+      "$ref": "#/$defs/PcbFragment",
       "default": {
-        "clearance": 0.2,
-        "track_width": 0.25,
-        "via_drill": 0.4,
-        "via_size": 0.8
+        "holes": [],
+        "placement": {},
+        "routes": {},
+        "silk": [],
+        "vias": [],
+        "zones": []
       }
+    },
+    "ports": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Public port name to local net name. All other nets are private.",
+      "type": "object"
     },
     "schematic": {
-      "$ref": "#/$defs/Schematic",
+      "$ref": "#/$defs/SchematicView",
       "default": {
         "labels": [],
-        "no_connect": [],
-        "placement": {},
+        "symbols": {},
         "wires": []
       }
-    },
-    "units": {
-      "$ref": "#/$defs/Units",
-      "default": "mm"
     }
   },
   "required": [
     "format_version",
-    "project",
-    "components",
-    "nets",
-    "pcb"
+    "module",
+    "ports"
   ],
-  "title": "KilProject",
+  "title": "Module",
   "type": "object"
 }
