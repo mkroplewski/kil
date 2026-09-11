@@ -617,7 +617,7 @@ fn placed_footprint(
                 ]),
             );
         }
-        if placement.side == BoardSide::Back {
+        if placement.side == BoardSide::Back && !matches!(node_head(child), Some("at" | "layer")) {
             mirror_footprint_geometry(child);
             swap_front_back_layers(child);
         }
@@ -954,7 +954,7 @@ fn mirror_footprint_geometry(node: &mut Node) {
         });
         if matches!(head, Some("at" | "xy" | "start" | "end" | "mid" | "center")) {
             if let Some(Node::Atom {
-                atom: Atom::Symbol(x),
+                atom: Atom::Symbol(x) | Atom::Quoted(x),
                 ..
             }) = items.get_mut(1)
                 && let Ok(value) = x.parse::<f64>()
@@ -962,7 +962,7 @@ fn mirror_footprint_geometry(node: &mut Node) {
                 *x = (-value).to_string();
             }
             if let Some(Node::Atom {
-                atom: Atom::Symbol(angle),
+                atom: Atom::Symbol(angle) | Atom::Quoted(angle),
                 ..
             }) = items.get_mut(3)
                 && let Ok(value) = angle.parse::<f64>()
@@ -1003,7 +1003,6 @@ fn swap_front_back_layers(node: &mut Node) {
         }
         Node::List { items, .. } => {
             for child in items {
-                mirror_footprint_geometry(child);
                 swap_front_back_layers(child);
             }
         }
@@ -1165,6 +1164,25 @@ pub(crate) mod tests {
     use super::*;
     use crate::library::LibraryResolver;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn back_side_geometry_is_mirrored_once_including_quoted_numbers() {
+        let mut pad = list(vec![
+            sym("pad"),
+            quoted("1"),
+            list(vec![sym("at"), quoted("2"), num(3.), quoted("90")]),
+            list(vec![sym("layers"), quoted("F.Cu"), quoted("F.Mask")]),
+        ]);
+        mirror_footprint_geometry(&mut pad);
+        swap_front_back_layers(&mut pad);
+        let expected = list(vec![
+            sym("pad"),
+            quoted("1"),
+            list(vec![sym("at"), quoted("-2"), num(3.), quoted("-90")]),
+            list(vec![sym("layers"), quoted("B.Cu"), quoted("B.Mask")]),
+        ]);
+        assert_eq!(pad, expected);
+    }
 
     #[test]
     fn pad_property_markers_do_not_receive_uuids() {

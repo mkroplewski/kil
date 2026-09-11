@@ -599,11 +599,16 @@ fn run(options: &BuildOptions, publish: bool) -> BuildOutcome {
     }
 
     if project.pcb.routing.is_some() {
+        let before_cache = validate_basic(&project, &options.input, &loaded.source);
         if let Err(diagnostic) = apply_route_cache(&mut project, &options.input) {
             diagnostics.push(*diagnostic);
             return invalid(diagnostics, loaded.source);
         }
-        diagnostics.extend(validate_basic(&project, &options.input, &loaded.source));
+        diagnostics.extend(
+            validate_basic(&project, &options.input, &loaded.source)
+                .into_iter()
+                .filter(|diagnostic| !before_cache.contains(diagnostic)),
+        );
         if has_errors(&diagnostics) {
             return invalid(diagnostics, loaded.source);
         }
@@ -1063,6 +1068,7 @@ pub fn module_schema() -> Value {
 
 fn schema_with_id(mut schema: Value, id: &str) -> Value {
     schema["properties"]["format_version"]["const"] = json!(2);
+    schema["$defs"]["DistanceConstraint"]["properties"]["max"]["exclusiveMinimum"] = json!(0.0);
     schema
         .as_object_mut()
         .expect("root schema is an object")
@@ -1102,6 +1108,19 @@ mod tests {
         let loaded = load_project(&path);
         assert!(loaded.project.is_none());
         assert!(loaded.diagnostics[0].span.is_some());
+    }
+
+    #[test]
+    fn layout_schema_bounds_match_runtime() {
+        for schema in [schema(), module_schema()] {
+            assert_eq!(
+                schema["$defs"]["DistanceConstraint"]["properties"]["max"]["exclusiveMinimum"],
+                0.0
+            );
+            let fraction = &schema["$defs"]["EdgeAnchor"]["properties"]["fraction"];
+            assert_eq!(fraction["minimum"], 0.0);
+            assert_eq!(fraction["maximum"], 1.0);
+        }
     }
 
     #[test]
