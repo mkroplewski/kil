@@ -740,11 +740,16 @@ fn run(options: &BuildOptions, publish: bool) -> BuildOutcome {
     }
 
     if project.pcb.routing.is_some() {
+        let before_cache = validate_basic(&project, &options.input, &loaded.source);
         if let Err(diagnostic) = apply_route_cache(&mut project, &options.input) {
             diagnostics.push(*diagnostic);
             return invalid(diagnostics, loaded.source);
         }
-        diagnostics.extend(validate_basic(&project, &options.input, &loaded.source));
+        diagnostics.extend(
+            validate_basic(&project, &options.input, &loaded.source)
+                .into_iter()
+                .filter(|diagnostic| !before_cache.contains(diagnostic)),
+        );
         if has_errors(&diagnostics) {
             return invalid(diagnostics, loaded.source);
         }
@@ -1264,6 +1269,7 @@ fn allow_parameter_values(schema: &mut Value) {
 
 fn schema_with_id(mut schema: Value, id: &str) -> Value {
     schema["properties"]["format_version"]["const"] = json!(2);
+    schema["$defs"]["DistanceConstraint"]["properties"]["max"]["exclusiveMinimum"] = json!(0.0);
     if id == MODULE_SCHEMA_URL {
         allow_parameter_values(&mut schema);
     }
@@ -1319,17 +1325,32 @@ mod tests {
     }
 
     #[test]
+    fn layout_schema_bounds_match_runtime() {
+        for schema in [schema(), module_schema()] {
+            let maximum = &schema["$defs"]["DistanceConstraint"]["properties"]["max"];
+            let maximum = maximum.get("anyOf").map(|v| &v[0]).unwrap_or(maximum);
+            assert_eq!(maximum["exclusiveMinimum"], 0.0);
+            let fraction = &schema["$defs"]["EdgeAnchor"]["properties"]["fraction"];
+            let fraction = fraction.get("anyOf").map(|v| &v[0]).unwrap_or(fraction);
+            assert_eq!(fraction["minimum"], 0.0);
+            assert_eq!(fraction["maximum"], 1.0);
+        }
+    }
+
+    #[test]
     fn schema_exposes_format_version() {
         let root = schema();
         let text = root.to_string();
         assert!(text.contains("format_version"));
         assert!(text.contains("parts"));
         assert_eq!(root["$id"], PROJECT_SCHEMA_URL);
+        assert_eq!(root["properties"]["format_version"]["const"], 2);
         assert!(root["properties"]["$schema"].is_object());
 
         let module = module_schema();
         assert!(module.to_string().contains("module"));
         assert_eq!(module["$id"], MODULE_SCHEMA_URL);
+        assert_eq!(module["properties"]["format_version"]["const"], 2);
         assert!(module["properties"]["$schema"].is_object());
     }
 

@@ -153,6 +153,7 @@ pub struct PadAnchor {
 #[serde(deny_unknown_fields)]
 pub struct EdgeAnchor {
     pub edge: usize,
+    #[schemars(range(min = 0.0, max = 1.0))]
     pub fraction: f64,
     #[serde(default)]
     pub offset: Point,

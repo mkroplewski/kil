@@ -181,7 +181,7 @@ pub fn resolve_layout(
     for plan in plans {
         for (local, p) in &plan.design.placement {
             let key = id(&plan.prefix, local);
-            if context.pending.insert(key.clone(), (p, plan)).is_some() {
+            if context.pending.insert(key.clone(), (p, plan)).is_some() && strict {
                 diagnostics.push(Diagnostic::error(
                     "LAYOUT001",
                     format!("duplicate placement '{key}'"),
@@ -428,6 +428,24 @@ mod tests {
         );
     }
     #[test]
+    fn duplicate_placement_is_reported_only_in_strict_pass() {
+        let (mut project, plan, libraries) = setup();
+        let plans = [plan.clone(), plan];
+        assert!(
+            !resolve_layout(&mut project, &plans, &libraries, false)
+                .iter()
+                .any(|d| d.code == "LAYOUT001")
+        );
+        assert_eq!(
+            resolve_layout(&mut project, &plans, &libraries, true)
+                .iter()
+                .filter(|d| d.code == "LAYOUT001")
+                .count(),
+            plans[0].design.placement.len()
+        );
+    }
+
+    #[test]
     fn distance_requirements_and_preferences_have_distinct_severity() {
         let (mut project, mut plan, libraries) = setup();
         plan.design.constraints.insert(
@@ -448,7 +466,7 @@ mod tests {
         assert!(
             resolve_layout(&mut project, &[plan], &libraries, true)
                 .iter()
-                .all(|d| d.severity == crate::Severity::Warning)
+                .any(|d| d.code == "LAYOUT004" && d.severity == crate::Severity::Warning)
         );
     }
 }

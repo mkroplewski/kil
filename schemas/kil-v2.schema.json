@@ -90,6 +90,7 @@
           "$ref": "#/$defs/Anchor"
         },
         "max": {
+          "exclusiveMinimum": 0.0,
           "format": "double",
           "type": "number"
         },
@@ -118,6 +119,8 @@
         },
         "fraction": {
           "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
           "type": "number"
         },
         "offset": {

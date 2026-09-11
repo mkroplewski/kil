@@ -83,6 +83,7 @@
         "max": {
           "anyOf": [
             {
+              "exclusiveMinimum": 0.0,
               "format": "double",
               "type": "number"
             },
@@ -135,6 +136,8 @@
           "anyOf": [
             {
               "format": "double",
+              "maximum": 1.0,
+              "minimum": 0.0,
               "type": "number"
             },
             {

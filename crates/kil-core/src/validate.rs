@@ -532,7 +532,9 @@ pub fn validate_libraries(
                         format!("symbol pin '{endpoint}' does not exist"),
                         file,
                     )
-                    .with_help("use a pin number or define an explicit terminal alias"),
+                    .with_help(
+                        "use a physical pin number or an explicit terminal alias declared on the part",
+                    ),
                 ),
                 1 => None,
                 _ if matches
