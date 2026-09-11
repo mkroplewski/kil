@@ -1062,6 +1062,7 @@ pub fn module_schema() -> Value {
 }
 
 fn schema_with_id(mut schema: Value, id: &str) -> Value {
+    schema["properties"]["format_version"]["const"] = json!(2);
     schema
         .as_object_mut()
         .expect("root schema is an object")
@@ -1110,11 +1111,13 @@ mod tests {
         assert!(text.contains("format_version"));
         assert!(text.contains("parts"));
         assert_eq!(root["$id"], PROJECT_SCHEMA_URL);
+        assert_eq!(root["properties"]["format_version"]["const"], 2);
         assert!(root["properties"]["$schema"].is_object());
 
         let module = module_schema();
         assert!(module.to_string().contains("module"));
         assert_eq!(module["$id"], MODULE_SCHEMA_URL);
+        assert_eq!(module["properties"]["format_version"]["const"], 2);
         assert!(module["properties"]["$schema"].is_object());
     }
 

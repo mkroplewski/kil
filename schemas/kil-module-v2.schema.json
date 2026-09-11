@@ -767,6 +767,7 @@
       }
     },
     "format_version": {
+      "const": 2,
       "format": "uint32",
       "minimum": 0,
       "type": "integer"

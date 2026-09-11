@@ -63,12 +63,21 @@ pub fn resolve(source: &Project, file: &Path) -> Resolution {
         origins: IndexMap::new(),
         diagnostics: vec![],
     };
-    let root = fs::canonicalize(
+    let root = match fs::canonicalize(
         file.parent()
             .filter(|p| !p.as_os_str().is_empty())
             .unwrap_or(Path::new(".")),
-    )
-    .unwrap_or_default();
+    ) {
+        Ok(root) => root,
+        Err(e) => {
+            result.diagnostics.push(Diagnostic::error(
+                "MOD002",
+                format!("cannot resolve project directory: {e}"),
+                file,
+            ));
+            return result;
+        }
+    };
     let mut prefixes = IndexMap::new();
     expand(
         &mut result,
@@ -549,6 +558,15 @@ mod instance_tests {
             file,
         )
     }
+    #[test]
+    fn missing_project_directory_is_an_error() {
+        let (source, _) = example();
+        let dir = tempfile::tempdir().unwrap();
+        let result = resolve(&source, &dir.path().join("missing/project.kil.json"));
+        assert_eq!(result.diagnostics.len(), 1);
+        assert_eq!(result.diagnostics[0].code, "MOD002");
+    }
+
     #[test]
     fn repeated_instances_are_private_and_source_is_immutable() {
         let (mut source, file) = example();
