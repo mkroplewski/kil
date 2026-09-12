@@ -46,4 +46,4 @@ After routing, run `kil check` or `kil build`. A stale cache after a placement, 
 
 Treat incomplete pad pairs, open nets, or a successful router process that emits no copper as routing failures. Do not replace a prior valid cache with such a result.
 
-The source format remains two-layer and does not express blind/buried vias or native differential-pair constraints. Review routed output in KiCad and report remaining DRC findings.
+The source format supports 2–32 copper layers through `pcb.stackup.layers`; the router receives the declared layer order. Through vias cross every copper layer. The format does not express blind/buried vias or native differential-pair constraints. Review routed output in KiCad and report remaining DRC findings.

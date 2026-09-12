@@ -111,6 +111,8 @@ pub struct Instance {
 #[serde(deny_unknown_fields)]
 pub struct PcbDesign {
     #[serde(default)]
+    pub stackup: Option<crate::stackup::Stackup>,
+    #[serde(default)]
     pub outline: Vec<Point>,
     #[serde(default)]
     pub placement: IndexMap<String, PlacementIntent>,

@@ -181,6 +181,12 @@ pub fn extract_route_cache(
     }
     let mut vias = Vec::new();
     for (index, via) in ast.vias.iter().enumerate() {
+        if via.via_type.as_deref().is_some_and(|t| t != "through") || via.layers != ["F.Cu", "B.Cu"]
+        {
+            return Err(
+                "router emitted a non-through via; blind/buried vias are not supported".into(),
+            );
+        }
         let Some(at) = via.at else {
             continue;
         };

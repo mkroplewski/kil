@@ -40,6 +40,7 @@ pub fn resolve(source: &Project, file: &Path) -> Resolution {
         nets: IndexMap::new(),
         schematic: Schematic::default(),
         pcb: Pcb {
+            stackup: source.pcb.stackup.clone().unwrap_or_default(),
             outline: source.pcb.outline.clone(),
             placement: IndexMap::new(),
             routes: IndexMap::new(),
@@ -369,10 +370,10 @@ fn expand(
             ));
             continue;
         }
-        if !m.pcb.outline.is_empty() {
+        if !m.pcb.outline.is_empty() || m.pcb.stackup.is_some() {
             r.diagnostics.push(Diagnostic::error(
                 "MOD015",
-                "module layouts cannot redefine the board outline",
+                "module layouts cannot redefine the board outline or stackup",
                 &canonical,
             ));
             continue;

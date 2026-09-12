@@ -82,11 +82,14 @@ fn checks_repeated_modules_and_detects_schematic_short() {
 fn routes_two_groups_preserves_copper_and_builds_cache() {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("project.kil.json");
-    fs::write(
-        &input,
-        include_str!("../../../examples/routed-divider.kil.json"),
-    )
-    .unwrap();
+    let mut source: serde_json::Value =
+        serde_json::from_str(include_str!("../../../examples/routed-divider.kil.json")).unwrap();
+    source["pcb"]["stackup"] = serde_json::json!({"layers":4});
+    source["rules"]["net_classes"]["signal"]
+        .as_object_mut()
+        .unwrap()
+        .remove("allowed_layers");
+    fs::write(&input, source.to_string()).unwrap();
     lock(&input);
     let mut options = RouteOptions {
         input: input.clone(),
@@ -178,4 +181,43 @@ fn pad_anchors_match_back_side_rotated_footprints() {
         kicad_cli: Some(cli()),
     });
     assert_eq!(result.exit, ExitClass::Success, "{:?}", result.diagnostics);
+}
+
+#[test]
+#[ignore = "requires KiCad 10; set KIL_KICAD_CLI"]
+fn four_layer_board_preserves_inner_copper_and_planes() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("project.kil.json");
+    fs::write(
+        &input,
+        include_str!("../../../examples/four-layer-divider.kil.json"),
+    )
+    .unwrap();
+    lock(&input);
+    let output = dir.path().join("output");
+    let result = kil_core::build(&BuildOptions {
+        input: input.clone(),
+        output: Some(output.clone()),
+        kicad_cli: Some(cli()),
+    });
+    assert_eq!(result.exit, ExitClass::Success, "{:?}", result.diagnostics);
+    let board = output.join("four-layer-divider.kicad_pcb");
+    let doc = kiutils_kicad::PcbFile::read(&board).unwrap();
+    assert!(
+        doc.ast()
+            .segments
+            .iter()
+            .any(|s| s.layer.as_deref() == Some("In1.Cu"))
+    );
+    assert!(
+        doc.ast()
+            .zones
+            .iter()
+            .any(|z| z.layer.as_deref() == Some("In2.Cu"))
+    );
+    let loaded = kil_core::load_project(&input);
+    let cache =
+        kil_core::routing::extract_route_cache(&loaded.project.unwrap(), &board, None).unwrap();
+    assert!(cache.routes["SIGNAL"].iter().any(|r| r.layer == "In1.Cu"));
+    assert_eq!(cache.vias.len(), 3);
 }

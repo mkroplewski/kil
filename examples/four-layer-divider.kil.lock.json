@@ -1,0 +1,7 @@
+{
+  "format_version": 2,
+  "assets": {
+    "footprint:Resistor_SMD:R_0603_1608Metric": "e485e42a56c89ca40e6080755a85122b57c9cd692f111d1bc507c76f8fc12ad2",
+    "symbol:Device:R": "a7a16f9a45447a293d9546291040840b5633c179c7082c7d27934f10b9d2e0eb"
+  }
+}

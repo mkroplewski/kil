@@ -1,7 +1,7 @@
 {
   "format_version": 2,
   "project": "routed-divider",
-  "input_fingerprint": "d1fb31aa65be4949fbef2425d2d28e0a86ab5b5c4e896328c2666f7a77f99ffd",
+  "input_fingerprint": "1fc77ff06f0c904fab117bcb24de2d7530134ce38548a6e4e5f22954e6ad46fa",
   "engine": {
     "name": "kicad-routing-tools",
     "version": "0.21.4"

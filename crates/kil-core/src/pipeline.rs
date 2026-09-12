@@ -548,6 +548,9 @@ pub fn route(options: &RouteOptions) -> RouteOutcome {
     if !selected_nets.is_empty() {
         command.arg("--nets").args(&selected_nets);
     }
+    command
+        .arg("--layers")
+        .args(project.pcb.stackup.copper_layers());
     command.args(&policy.extra_args);
     let result = match command.output() {
         Ok(result) => result,

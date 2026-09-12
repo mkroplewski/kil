@@ -1,6 +1,6 @@
 # KIL
 
-KIL compiles declarative circuit and layout intent into a KiCad 10 project. Edit `*.kil.json`; generated KiCad files are disposable output. The format is experimental and currently supports one schematic sheet and two copper layers.
+KIL compiles declarative circuit and layout intent into a KiCad 10 project. Edit `*.kil.json`; generated KiCad files are disposable output. The format is experimental and currently supports one schematic sheet and 2–32 copper layers.
 
 ## Format 2
 
@@ -112,7 +112,7 @@ Connectivity comes only from `circuit.nets` and `circuit.unconnected`. KIL compa
 
 ## Explicit integration tests
 
-The ordinary suite uses checked-in library fixtures. Three additional tests require KiCad 10 and KiCadRoutingTools. They appear as ignored in ordinary test output, and the dedicated Ubuntu CI job installs the tools and runs them on every pull request and push to `main`. CI uses the KiCad 10 release PPA and the router tag in `KRT_VERSION`. To run them locally:
+The ordinary suite uses checked-in library fixtures. Additional tests require KiCad 10 and KiCadRoutingTools. They appear as ignored in ordinary test output, and the dedicated Ubuntu CI job installs the tools and runs them on every pull request and push to `main`. CI uses the KiCad 10 release PPA and the router tag in `KRT_VERSION`. To run them locally:
 
 ```sh
 KIL_KICAD_CLI=/path/to/kicad-cli KIL_KRT=/path/to/KiCadRoutingTools \
@@ -120,3 +120,17 @@ KIL_KICAD_CLI=/path/to/kicad-cli KIL_KRT=/path/to/KiCadRoutingTools \
 ```
 
 They verify repeated modules, symbol rotations, back-side pad anchors, an unintended schematic short, sequential routing of two net groups, preservation of copper and lock flags, cache-backed publication, and stale-cache rejection after moving a part. The router test uses a temporary copy of the example.
+
+### Multilayer boards
+
+Omit `pcb.stackup` for the usual two-layer, 1.6 mm board. A four-layer board only needs:
+
+```json
+"stackup": { "layers": 4 }
+```
+
+Layers are named `F.Cu`, `In1.Cu`, `In2.Cu`, and `B.Cu`. Routes, planes, and net-class layer restrictions use those same names. Vias remain through vias and cross every copper layer. Omitting `allowed_layers` from a net class allows all board layers; an explicit list also restricts which layers a through via may cross.
+
+Default copper is 0.035 mm thick, with the remaining thickness distributed evenly as FR4. These are generation defaults, not a manufacturer-approved impedance stackup. For a fabrication specification, set `thickness`, `copper_thickness`, and `dielectrics` in `stackup`. Each dielectric specifies its `thickness`, optionally `material` and `epsilon_r`, in order between adjacent copper layers. Thicknesses must add up. Only the root project defines the board stackup.
+
+Planes support optional `priority`, `solid`, `thermal_gap`, and `thermal_width`. The defaults retain thermal pad connections. See `examples/four-layer-divider.kil.json` for a checked inner-layer route and ground plane. Blind/buried vias and microvias are not supported.

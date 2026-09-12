@@ -129,6 +129,8 @@ pub struct SchematicLabel {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Pcb {
+    #[serde(default)]
+    pub stackup: crate::stackup::Stackup,
     pub outline: Vec<Point>,
     pub placement: IndexMap<String, PcbPlacement>,
     #[serde(default)]
@@ -239,6 +241,14 @@ pub struct Via {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Zone {
+    #[serde(default)]
+    pub priority: u32,
+    #[serde(default)]
+    pub solid: bool,
+    #[serde(default)]
+    pub thermal_gap: Option<f64>,
+    #[serde(default)]
+    pub thermal_width: Option<f64>,
     pub net: String,
     #[serde(default = "default_front_copper")]
     pub layer: String,
@@ -315,9 +325,6 @@ fn default_via_drill() -> f64 {
 fn default_min_width() -> f64 {
     0.15
 }
-fn copper_layers() -> Vec<String> {
-    vec!["F.Cu".into(), "B.Cu".into()]
-}
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NetClass {
@@ -325,8 +332,13 @@ pub struct NetClass {
     pub clearance: f64,
     pub minimum_track_width: f64,
     pub preferred_track_width: f64,
-    #[serde(default = "copper_layers")]
+    #[serde(default)]
     pub allowed_layers: Vec<String>,
+}
+impl NetClass {
+    pub fn allows(&self, layer: &str) -> bool {
+        self.allowed_layers.is_empty() || self.allowed_layers.iter().any(|l| l == layer)
+    }
 }
 impl Rules {
     pub fn class(&self, net: &str) -> Option<&NetClass> {

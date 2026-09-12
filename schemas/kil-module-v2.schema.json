@@ -74,6 +74,44 @@
       },
       "type": "object"
     },
+    "Dielectric": {
+      "additionalProperties": false,
+      "properties": {
+        "epsilon_r": {
+          "anyOf": [
+            {
+              "default": 4.5,
+              "format": "double",
+              "type": "number"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        },
+        "material": {
+          "default": "FR4",
+          "type": "string"
+        },
+        "thickness": {
+          "anyOf": [
+            {
+              "format": "double",
+              "type": "number"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "thickness"
+      ],
+      "type": "object"
+    },
     "DistanceConstraint": {
       "additionalProperties": false,
       "properties": {
@@ -425,6 +463,17 @@
           },
           "type": "array"
         },
+        "stackup": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Stackup"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "vias": {
           "default": [],
           "items": {
@@ -761,6 +810,63 @@
       ],
       "type": "object"
     },
+    "Stackup": {
+      "additionalProperties": false,
+      "properties": {
+        "copper_thickness": {
+          "anyOf": [
+            {
+              "default": 0.035,
+              "description": "Uniform copper thickness in mm.",
+              "format": "double",
+              "type": "number"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        },
+        "dielectrics": {
+          "default": [],
+          "description": "Optional fabrication specification, in order between adjacent copper layers.",
+          "items": {
+            "$ref": "#/$defs/Dielectric"
+          },
+          "type": "array"
+        },
+        "layers": {
+          "anyOf": [
+            {
+              "default": 2,
+              "description": "Even copper layer count. Inner layers are named In1.Cu, In2.Cu, and so on.",
+              "format": "uint8",
+              "maximum": 32,
+              "minimum": 2,
+              "type": "integer"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        },
+        "thickness": {
+          "anyOf": [
+            {
+              "default": 1.6,
+              "format": "double",
+              "type": "number"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
     "Transform": {
       "additionalProperties": false,
       "properties": {
@@ -896,6 +1002,48 @@
             "type": "array"
           },
           "type": "array"
+        },
+        "priority": {
+          "anyOf": [
+            {
+              "default": 0,
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        },
+        "solid": {
+          "anyOf": [
+            {
+              "default": false,
+              "type": "boolean"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        },
+        "thermal_gap": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "thermal_width": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
         }
       },
       "required": [
@@ -950,6 +1098,7 @@
         "placement": {},
         "routes": {},
         "silk": [],
+        "stackup": null,
         "vias": [],
         "zones": []
       }

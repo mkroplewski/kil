@@ -42,6 +42,11 @@ pub fn generate(
     project: &ResolvedProject,
     libraries: &ResolvedLibraries,
 ) -> std::io::Result<GeneratedProject> {
+    project
+        .pcb
+        .stackup
+        .validate()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
     for name in project.rules.net_classes.keys() {
         if !crate::model::valid_net_class_name(name) {
             return Err(std::io::Error::new(
@@ -307,13 +312,14 @@ fn pcb_node(project: &ResolvedProject, libraries: &ResolvedLibraries) -> Node {
         ]),
         list(vec![
             sym("general"),
-            list(vec![sym("thickness"), num(1.6)]),
+            list(vec![sym("thickness"), num(project.pcb.stackup.thickness)]),
             list(vec![sym("legacy_teardrops"), sym("no")]),
         ]),
         list(vec![sym("paper"), quoted("A4")]),
-        pcb_layers(),
+        pcb_layers(&project.pcb.stackup),
         list(vec![
             sym("setup"),
+            physical_stackup(&project.pcb.stackup),
             list(vec![sym("pad_to_mask_clearance"), num(0.0)]),
             list(vec![
                 sym("allow_soldermask_bridges_in_footprints"),
@@ -447,20 +453,21 @@ fn pcb_node(project: &ResolvedProject, libraries: &ResolvedLibraries) -> Node {
                 sym("uuid"),
                 quoted(stable_uuid(project, &format!("pcb/zone/{index}")).to_string()),
             ]),
+            list(vec![sym("priority"), sym(zone.priority.to_string())]),
             list(vec![sym("hatch"), sym("edge"), num(0.5)]),
-            list(vec![
-                sym("connect_pads"),
-                list(vec![
-                    sym("clearance"),
-                    num(zone.clearance.unwrap_or(project.rules.clearance)),
-                ]),
-            ]),
+            zone_connection(zone, project.rules.clearance),
             list(vec![sym("min_thickness"), num(0.25)]),
             list(vec![
                 sym("fill"),
                 sym("yes"),
-                list(vec![sym("thermal_gap"), num(0.3)]),
-                list(vec![sym("thermal_bridge_width"), num(0.3)]),
+                list(vec![
+                    sym("thermal_gap"),
+                    num(zone.thermal_gap.unwrap_or(0.3)),
+                ]),
+                list(vec![
+                    sym("thermal_bridge_width"),
+                    num(zone.thermal_width.unwrap_or(0.3)),
+                ]),
             ]),
             list(vec![sym("polygon"), list(pts)]),
         ]));
@@ -717,8 +724,8 @@ fn design_rules(project: &ResolvedProject) -> String {
     let mut out = String::from("(version 1)\n");
     for (name, class) in &project.rules.net_classes {
         out.push_str(&format!("(rule \"{name}-width\" (condition \"A.NetClass == '{name}'\") (constraint track_width (min {})))\n",class.minimum_track_width));
-        for layer in ["F.Cu", "B.Cu"] {
-            if !class.allowed_layers.iter().any(|l| l == layer) {
+        for layer in project.pcb.stackup.copper_layers() {
+            if !class.allows(&layer) {
                 out.push_str(&format!("(rule \"{name}-{layer}\" (condition \"A.NetClass == '{name}'\") (layer \"{layer}\") (constraint disallow track via zone))\n"));
             }
         }
@@ -832,11 +839,9 @@ fn stroke(width: f64) -> Node {
     ])
 }
 
-fn pcb_layers() -> Node {
-    list(vec![
+fn pcb_layers(stackup: &crate::stackup::Stackup) -> Node {
+    let mut items = vec![
         sym("layers"),
-        list(vec![sym("0"), quoted("F.Cu"), sym("signal")]),
-        list(vec![sym("2"), quoted("B.Cu"), sym("signal")]),
         list(vec![
             sym("9"),
             quoted("F.Adhes"),
@@ -893,7 +898,21 @@ fn pcb_layers() -> Node {
         ]),
         list(vec![sym("35"), quoted("F.Fab"), sym("user")]),
         list(vec![sym("33"), quoted("B.Fab"), sym("user")]),
-    ])
+    ];
+    for (index, layer) in stackup.copper_layers().iter().enumerate().rev() {
+        let id = if layer == "F.Cu" {
+            0
+        } else if layer == "B.Cu" {
+            2
+        } else {
+            2 * index + 2
+        };
+        items.insert(
+            1,
+            list(vec![sym(id.to_string()), quoted(layer), sym("signal")]),
+        );
+    }
+    list(items)
 }
 
 fn gr_line(
@@ -1214,6 +1233,52 @@ fn at2(point: Point) -> Node {
 }
 fn at3(x: f64, y: f64, rotation: f64) -> Node {
     list(vec![sym("at"), num(x), num(y), num(rotation)])
+}
+
+fn zone_connection(zone: &crate::model::Zone, clearance: f64) -> Node {
+    let mut items = vec![sym("connect_pads")];
+    if zone.solid {
+        items.push(sym("yes"));
+    }
+    items.push(list(vec![
+        sym("clearance"),
+        num(zone.clearance.unwrap_or(clearance)),
+    ]));
+    list(items)
+}
+fn physical_stackup(stackup: &crate::stackup::Stackup) -> Node {
+    let mut items = vec![sym("stackup")];
+    let layers = stackup.copper_layers();
+    for (index, layer) in layers.iter().enumerate() {
+        items.push(list(vec![
+            sym("layer"),
+            quoted(layer),
+            list(vec![sym("type"), quoted("copper")]),
+            list(vec![sym("thickness"), num(stackup.copper_thickness)]),
+        ]));
+        if index + 1 < layers.len() {
+            let dielectric = stackup.dielectrics.get(index);
+            let thickness = dielectric.map(|d| d.thickness).unwrap_or(
+                (stackup.thickness - f64::from(stackup.layers) * stackup.copper_thickness)
+                    / f64::from(stackup.layers - 1),
+            );
+            items.push(list(vec![
+                sym("layer"),
+                quoted(format!("dielectric {}", index + 1)),
+                list(vec![sym("type"), quoted("core")]),
+                list(vec![sym("thickness"), num(thickness)]),
+                list(vec![
+                    sym("material"),
+                    quoted(dielectric.map(|d| d.material.as_str()).unwrap_or("FR4")),
+                ]),
+                list(vec![
+                    sym("epsilon_r"),
+                    num(dielectric.map(|d| d.epsilon_r).unwrap_or(4.5)),
+                ]),
+            ]));
+        }
+    }
+    list(items)
 }
 
 #[cfg(test)]

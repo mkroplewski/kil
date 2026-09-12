@@ -18,3 +18,5 @@ pub use pipeline::{
     BuildOptions, BuildOutcome, ExitClass, InspectOptions, InspectOutcome, RouteOptions,
     RouteOutcome, build, check, inspect, load_project, module_schema, route, schema,
 };
+
+pub mod stackup;

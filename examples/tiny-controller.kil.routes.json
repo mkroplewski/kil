@@ -1,7 +1,7 @@
 {
   "format_version": 2,
   "project": "tiny-controller",
-  "input_fingerprint": "5fca6a290c02504f9557d39f13638ae8d52d9055ee767fb0f2cf965152947a25",
+  "input_fingerprint": "96c19a288ba409209010063e266128e768c44f18588fe56af947948d7fad1e68",
   "engine": {
     "name": "kicad-routing-tools",
     "version": "0.21.4"
