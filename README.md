@@ -129,7 +129,7 @@ Omit `pcb.stackup` for the usual two-layer, 1.6 mm board. A four-layer board onl
 "stackup": { "layers": 4 }
 ```
 
-Layers are named `F.Cu`, `In1.Cu`, `In2.Cu`, and `B.Cu`. Routes, planes, and net-class layer restrictions use those same names. Vias remain through vias and cross every copper layer. Omitting `allowed_layers` from a net class allows all board layers; an explicit list also restricts which layers a through via may cross.
+Layers are named `F.Cu`, `In1.Cu`, `In2.Cu`, and `B.Cu`. Routes, planes, and net-class layer restrictions use those same names. Vias remain through vias and cross every copper layer. Omitting `allowed_layers` from a net class allows all board layers; a net class must allow every board copper layer to use through vias.
 
 Default copper is 0.035 mm thick, with the remaining thickness distributed evenly as FR4. These are generation defaults, not a manufacturer-approved impedance stackup. For a fabrication specification, set `thickness`, `copper_thickness`, and `dielectrics` in `stackup`. Each dielectric specifies its `thickness`, optionally `material` and `epsilon_r`, in order between adjacent copper layers. Thicknesses must add up. Only the root project defines the board stackup.
 
