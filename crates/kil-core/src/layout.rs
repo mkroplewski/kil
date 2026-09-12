@@ -205,6 +205,7 @@ pub fn resolve_layout(
     let mut routes: IndexMap<String, Vec<Route>> = IndexMap::new();
     let mut vias = vec![];
     let mut zones = vec![];
+    let mut keepouts = vec![];
     let mut holes = vec![];
     let mut silk = vec![];
     for plan in plans {
@@ -278,6 +279,15 @@ pub fn resolve_layout(
                 .collect();
             zones.push(z);
         }
+        for area in &plan.design.keepouts {
+            let mut area = area.clone();
+            area.outline = area
+                .outline
+                .iter()
+                .map(|p| transform(*p, plan.transform))
+                .collect();
+            keepouts.push(area);
+        }
         for h in &plan.design.holes {
             let mut h = h.clone();
             h.at = transform(h.at, plan.transform);
@@ -327,6 +337,7 @@ pub fn resolve_layout(
     project.pcb.routes = routes;
     project.pcb.vias = vias;
     project.pcb.zones = zones;
+    project.pcb.keepouts = keepouts;
     project.pcb.holes = holes;
     project.pcb.silk = silk;
     diagnostics

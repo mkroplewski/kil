@@ -1,0 +1,210 @@
+{
+  "format_version": 2,
+  "module": "analog-input",
+  "ports": {
+    "signal": "signal",
+    "vcc": "vcc",
+    "gnd": "gnd"
+  },
+  "circuit": {
+    "parts": {
+      "input": {
+        "symbol": "Connector_Generic:Conn_01x02",
+        "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+        "value": "I/O",
+        "reference_prefix": "J"
+      },
+      "series": {
+        "symbol": "Device:R",
+        "footprint": "Resistor_SMD:R_0603_1608Metric",
+        "value": "1k",
+        "reference_prefix": "R"
+      },
+      "bleed": {
+        "symbol": "Device:R",
+        "footprint": "Resistor_SMD:R_0603_1608Metric",
+        "value": "100k",
+        "reference_prefix": "R"
+      },
+      "filter": {
+        "symbol": "Device:C",
+        "footprint": "Capacitor_SMD:C_0603_1608Metric",
+        "value": "10n",
+        "reference_prefix": "C"
+      },
+      "rf_filter": {
+        "symbol": "Device:C",
+        "footprint": "Capacitor_SMD:C_0603_1608Metric",
+        "value": "100p",
+        "reference_prefix": "C"
+      },
+      "upper": {
+        "symbol": "Device:D_Schottky",
+        "footprint": "Diode_SMD:D_SOD-323",
+        "value": "BAT54",
+        "reference_prefix": "D"
+      },
+      "lower": {
+        "symbol": "Device:D_Schottky",
+        "footprint": "Diode_SMD:D_SOD-323",
+        "value": "BAT54",
+        "reference_prefix": "D"
+      },
+      "probe": {
+        "symbol": "Connector:TestPoint",
+        "footprint": "TestPoint:TestPoint_Pad_D1.0mm",
+        "value": "ADC",
+        "reference_prefix": "TP"
+      }
+    },
+    "nets": {
+      "external": [
+        "input.1",
+        "series.1"
+      ],
+      "signal": [
+        "series.2",
+        "bleed.1",
+        "filter.1",
+        "rf_filter.1",
+        "upper.2",
+        "lower.1",
+        "probe.1"
+      ],
+      "vcc": [
+        "upper.1"
+      ],
+      "gnd": [
+        "input.2",
+        "bleed.2",
+        "filter.2",
+        "rf_filter.2",
+        "lower.2"
+      ]
+    }
+  },
+  "schematic": {
+    "sheets": {
+      "channel": {
+        "symbols": {
+          "input": {
+            "part": "input",
+            "unit": 1,
+            "at": [
+              50.8,
+              50.8
+            ]
+          },
+          "series": {
+            "part": "series",
+            "unit": 1,
+            "at": [
+              91.44,
+              50.8
+            ]
+          },
+          "bleed": {
+            "part": "bleed",
+            "unit": 1,
+            "at": [
+              132.08,
+              50.8
+            ]
+          },
+          "filter": {
+            "part": "filter",
+            "unit": 1,
+            "at": [
+              172.72,
+              50.8
+            ]
+          },
+          "rf_filter": {
+            "part": "rf_filter",
+            "unit": 1,
+            "at": [
+              50.8,
+              91.44
+            ]
+          },
+          "upper": {
+            "part": "upper",
+            "unit": 1,
+            "at": [
+              91.44,
+              91.44
+            ]
+          },
+          "lower": {
+            "part": "lower",
+            "unit": 1,
+            "at": [
+              132.08,
+              91.44
+            ]
+          },
+          "probe": {
+            "part": "probe",
+            "unit": 1,
+            "at": [
+              172.72,
+              91.44
+            ]
+          }
+        }
+      }
+    }
+  },
+  "pcb": {
+    "placement": {
+      "input": {
+        "at": [
+          2,
+          2
+        ]
+      },
+      "series": {
+        "at": [
+          7,
+          2
+        ]
+      },
+      "bleed": {
+        "at": [
+          7,
+          6
+        ]
+      },
+      "filter": {
+        "at": [
+          11,
+          6
+        ]
+      },
+      "rf_filter": {
+        "at": [
+          11,
+          10
+        ]
+      },
+      "upper": {
+        "at": [
+          7,
+          10
+        ]
+      },
+      "lower": {
+        "at": [
+          7,
+          14
+        ]
+      },
+      "probe": {
+        "at": [
+          12,
+          14
+        ]
+      }
+    }
+  }
+}

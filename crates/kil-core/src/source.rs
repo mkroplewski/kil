@@ -24,6 +24,9 @@ pub struct Project {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Circuit {
+    /// Connector terminals that provide external power, including its return.
+    #[serde(default)]
+    pub power_sources: Vec<String>,
     #[serde(default)]
     pub parts: IndexMap<String, Part>,
     #[serde(default)]
@@ -123,6 +126,8 @@ pub struct Instance {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PcbDesign {
+    #[serde(default)]
+    pub keepouts: Vec<Keepout>,
     #[serde(default)]
     pub stackup: Option<crate::stackup::Stackup>,
     #[serde(default)]

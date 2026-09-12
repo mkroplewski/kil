@@ -67,6 +67,12 @@ pub fn generate(
             ));
         }
     }
+    if !project.power_sources.is_empty() && libraries.power_flag.is_none() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "missing power:PWR_FLAG library asset",
+        ));
+    }
     let root_schematic = schematic_node(project, libraries, "");
     let sheets = project
         .schematic
@@ -156,7 +162,14 @@ fn schematic_node(full: &ResolvedProject, libraries: &ResolvedLibraries, sheet: 
             quoted(env!("CARGO_PKG_VERSION")),
         ]),
         list(vec![sym("uuid"), quoted(page_uuid.to_string())]),
-        list(vec![sym("paper"), quoted("A4")]),
+        list(vec![
+            sym("paper"),
+            quoted(if project.schematic.sheets.len() > 8 && sheet.is_empty() {
+                "A3"
+            } else {
+                "A4"
+            }),
+        ]),
     ];
 
     let mut embedded = vec![sym("lib_symbols")];
@@ -167,6 +180,14 @@ fn schematic_node(full: &ResolvedProject, libraries: &ResolvedLibraries, sheet: 
             set_second_quoted(&mut node, &resolved.symbol_id);
             node
         });
+    }
+    if !project.power_sources.is_empty() {
+        let mut flag = libraries
+            .power_flag
+            .clone()
+            .expect("validated power flag library");
+        set_second_quoted(&mut flag, "power:PWR_FLAG");
+        embedded.push(flag);
     }
     embedded.extend(seen.into_values());
     root.push(list(embedded));
@@ -284,6 +305,11 @@ fn schematic_node(full: &ResolvedProject, libraries: &ResolvedLibraries, sheet: 
         root.push(list(items));
     }
 
+    for (index, endpoint) in project.power_sources.iter().enumerate() {
+        if let Some(at) = endpoint_position(project, libraries, endpoint) {
+            root.push(power_flag(project, endpoint, at, index, &instance_path));
+        }
+    }
     for (wire_index, wire) in project.schematic.wires.iter().enumerate() {
         for (segment_index, segment) in wire.path.windows(2).enumerate() {
             root.push(list(vec![
@@ -496,6 +522,36 @@ fn pcb_node(project: &ResolvedProject, libraries: &ResolvedLibraries) -> Node {
             items.push(list(vec![sym("locked"), sym("yes")]));
         }
         root.push(list(items));
+    }
+    for (index, area) in project.pcb.keepouts.iter().enumerate() {
+        let layers = if area.layers.is_empty() {
+            project.pcb.stackup.copper_layers()
+        } else {
+            area.layers.clone()
+        };
+        for layer in layers {
+            let mut pts = vec![sym("pts")];
+            pts.extend(area.outline.iter().map(|p| xy(frame.map(*p))));
+            let mut restrictions = vec![sym("keepout")];
+            for item in ["tracks", "vias", "pads", "copperpour", "footprints"] {
+                restrictions.push(list(vec![sym(item), sym("not_allowed")]));
+            }
+            root.push(list(vec![
+                sym("zone"),
+                list(vec![sym("net"), sym("0")]),
+                list(vec![sym("net_name"), quoted("")]),
+                list(vec![sym("layer"), quoted(&layer)]),
+                list(vec![
+                    sym("uuid"),
+                    quoted(
+                        stable_uuid(project, &format!("pcb/keepout/{index}/{layer}")).to_string(),
+                    ),
+                ]),
+                list(vec![sym("hatch"), sym("edge"), num(0.5)]),
+                list(restrictions),
+                list(vec![sym("polygon"), list(pts)]),
+            ]));
+        }
     }
     for (index, zone) in project.pcb.zones.iter().enumerate() {
         let Some(code) = net_codes.get(&zone.net) else {
@@ -1410,6 +1466,54 @@ fn sheet_symbol(project: &ResolvedProject, sheet: &str, index: usize) -> Node {
     ])
 }
 
+fn power_flag(
+    project: &ResolvedProject,
+    endpoint: &str,
+    at: Point,
+    index: usize,
+    path: &str,
+) -> Node {
+    let reference = format!("#FLG{}", index + 1);
+    let uuid = stable_uuid(project, &format!("schematic/power/{endpoint}"));
+    let instance = list(vec![
+        sym("path"),
+        quoted(path),
+        list(vec![sym("reference"), quoted(&reference)]),
+        list(vec![sym("unit"), sym("1")]),
+    ]);
+    list(vec![
+        sym("symbol"),
+        list(vec![sym("lib_id"), quoted("power:PWR_FLAG")]),
+        at3(at[0], at[1], 0.),
+        list(vec![sym("unit"), sym("1")]),
+        list(vec![sym("in_bom"), sym("no")]),
+        list(vec![sym("on_board"), sym("no")]),
+        list(vec![sym("uuid"), quoted(uuid.to_string())]),
+        list(vec![
+            sym("property"),
+            quoted("Reference"),
+            quoted(&reference),
+            at3(at[0], at[1], 0.0),
+            effects(true),
+        ]),
+        list(vec![
+            sym("property"),
+            quoted("Value"),
+            quoted("PWR_FLAG"),
+            at3(at[0], at[1], 0.0),
+            effects(true),
+        ]),
+        list(vec![
+            sym("instances"),
+            list(vec![
+                sym("project"),
+                quoted(&project.project.name),
+                instance,
+            ]),
+        ]),
+    ])
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1573,6 +1677,7 @@ pub(crate) mod tests {
         project.nets.insert("B".into(), pin_twos);
         let il = serde_json::to_string(&project).unwrap();
         let libraries = ResolvedLibraries {
+            power_flag: None,
             components: project
                 .components
                 .keys()

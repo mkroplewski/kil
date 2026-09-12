@@ -44,6 +44,7 @@ pub struct ResolvedComponent {
 
 #[derive(Debug, Clone, Default)]
 pub struct ResolvedLibraries {
+    pub power_flag: Option<Node>,
     pub components: IndexMap<String, ResolvedComponent>,
 }
 
@@ -285,6 +286,15 @@ impl LibraryResolver {
                     pads: footprint_asset.pads,
                 },
             );
+        }
+        if !project.power_sources.is_empty() {
+            match self.load_symbol("power:PWR_FLAG") {
+                Ok(asset) => resolved.power_flag = Some(asset.node),
+                Err(err) => diagnostics.push(
+                    Diagnostic::error(err.code, err.message, file)
+                        .at_path("/circuit/power_sources"),
+                ),
+            }
         }
         (resolved, diagnostics)
     }

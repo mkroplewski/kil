@@ -64,6 +64,14 @@
           "default": {},
           "type": "object"
         },
+        "power_sources": {
+          "default": [],
+          "description": "Connector terminals that provide external power, including its return.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "unconnected": {
           "default": [],
           "items": {
@@ -298,6 +306,44 @@
       ],
       "type": "object"
     },
+    "Keepout": {
+      "additionalProperties": false,
+      "description": "A region reserved from copper and component placement on the selected layers.",
+      "properties": {
+        "layers": {
+          "default": [],
+          "description": "Empty means all copper layers.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "outline": {
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "format": "double",
+                  "type": "number"
+                },
+                {
+                  "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+                  "type": "string"
+                }
+              ]
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "outline"
+      ],
+      "type": "object"
+    },
     "PadAnchor": {
       "additionalProperties": false,
       "properties": {
@@ -415,6 +461,13 @@
           "default": [],
           "items": {
             "$ref": "#/$defs/Hole"
+          },
+          "type": "array"
+        },
+        "keepouts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Keepout"
           },
           "type": "array"
         },
@@ -1105,6 +1158,7 @@
         "instances": {},
         "nets": {},
         "parts": {},
+        "power_sources": [],
         "unconnected": []
       }
     },
@@ -1129,6 +1183,7 @@
       "default": {
         "constraints": {},
         "holes": [],
+        "keepouts": [],
         "outline": [],
         "placement": {},
         "routes": {},

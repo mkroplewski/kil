@@ -34,6 +34,17 @@ pub fn snapshot(libraries: &ResolvedLibraries) -> LibraryLock {
             assets.insert(key, format!("{:x}", Sha256::digest(text.as_bytes())));
         }
     }
+    if let Some(node) = &libraries.power_flag {
+        let text = kiutils_sexpr::CstDocument {
+            raw: String::new(),
+            nodes: vec![node.clone()],
+        }
+        .to_canonical_string();
+        assets.insert(
+            "symbol:power:PWR_FLAG".into(),
+            format!("{:x}", Sha256::digest(text.as_bytes())),
+        );
+    }
     LibraryLock {
         format_version: 2,
         assets,
@@ -82,6 +93,15 @@ pub fn write(input: &Path, libraries: &ResolvedLibraries) -> Result<PathBuf, Str
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn compiler_power_symbol_is_part_of_the_library_lock() {
+        let (_, mut libraries) = crate::kicad::tests::fixture();
+        let before = snapshot(&libraries);
+        libraries.power_flag = Some(libraries.components["R1"].symbol_node.clone());
+        let after = snapshot(&libraries);
+        assert!(after.assets.contains_key("symbol:power:PWR_FLAG"));
+        assert_ne!(fingerprint(&before), fingerprint(&after));
+    }
     #[test]
     fn changed_resolved_geometry_requires_explicit_acceptance() {
         let (_, mut libraries) = crate::kicad::tests::fixture();

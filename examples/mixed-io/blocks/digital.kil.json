@@ -1,0 +1,217 @@
+{
+  "format_version": 2,
+  "module": "digital-io",
+  "ports": {
+    "signal": "signal",
+    "vcc": "vcc",
+    "gnd": "gnd"
+  },
+  "circuit": {
+    "parts": {
+      "io": {
+        "symbol": "Connector_Generic:Conn_01x03",
+        "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical",
+        "value": "I/O",
+        "reference_prefix": "J"
+      },
+      "series": {
+        "symbol": "Device:R",
+        "footprint": "Resistor_SMD:R_0603_1608Metric",
+        "value": "100",
+        "reference_prefix": "R"
+      },
+      "pulldown": {
+        "symbol": "Device:R",
+        "footprint": "Resistor_SMD:R_0603_1608Metric",
+        "value": "100k",
+        "reference_prefix": "R"
+      },
+      "upper": {
+        "symbol": "Device:D_Schottky",
+        "footprint": "Diode_SMD:D_SOD-323",
+        "value": "BAT54",
+        "reference_prefix": "D"
+      },
+      "lower": {
+        "symbol": "Device:D_Schottky",
+        "footprint": "Diode_SMD:D_SOD-323",
+        "value": "BAT54",
+        "reference_prefix": "D"
+      },
+      "indicator": {
+        "symbol": "Device:LED",
+        "footprint": "LED_SMD:LED_0603_1608Metric",
+        "value": "green",
+        "reference_prefix": "D"
+      },
+      "led_limit": {
+        "symbol": "Device:R",
+        "footprint": "Resistor_SMD:R_0603_1608Metric",
+        "value": "1k",
+        "reference_prefix": "R"
+      },
+      "driver": {
+        "symbol": "Transistor_FET:2N7002",
+        "footprint": "Package_TO_SOT_SMD:SOT-23",
+        "value": "2N7002",
+        "reference_prefix": "Q"
+      }
+    },
+    "nets": {
+      "signal": [
+        "series.1",
+        "pulldown.1",
+        "driver.1"
+      ],
+      "external": [
+        "series.2",
+        "io.1",
+        "upper.2",
+        "lower.1"
+      ],
+      "vcc": [
+        "io.2",
+        "upper.1",
+        "led_limit.1"
+      ],
+      "gnd": [
+        "io.3",
+        "pulldown.2",
+        "lower.2",
+        "driver.2"
+      ],
+      "led_supply": [
+        "led_limit.2",
+        "indicator.2"
+      ],
+      "led_return": [
+        "indicator.1",
+        "driver.3"
+      ]
+    }
+  },
+  "schematic": {
+    "sheets": {
+      "channel": {
+        "symbols": {
+          "io": {
+            "part": "io",
+            "unit": 1,
+            "at": [
+              50.8,
+              50.8
+            ]
+          },
+          "series": {
+            "part": "series",
+            "unit": 1,
+            "at": [
+              91.44,
+              50.8
+            ]
+          },
+          "pulldown": {
+            "part": "pulldown",
+            "unit": 1,
+            "at": [
+              132.08,
+              50.8
+            ]
+          },
+          "upper": {
+            "part": "upper",
+            "unit": 1,
+            "at": [
+              172.72,
+              50.8
+            ]
+          },
+          "lower": {
+            "part": "lower",
+            "unit": 1,
+            "at": [
+              50.8,
+              91.44
+            ]
+          },
+          "indicator": {
+            "part": "indicator",
+            "unit": 1,
+            "at": [
+              91.44,
+              91.44
+            ]
+          },
+          "led_limit": {
+            "part": "led_limit",
+            "unit": 1,
+            "at": [
+              132.08,
+              91.44
+            ]
+          },
+          "driver": {
+            "part": "driver",
+            "unit": 1,
+            "at": [
+              172.72,
+              91.44
+            ]
+          }
+        }
+      }
+    }
+  },
+  "pcb": {
+    "placement": {
+      "io": {
+        "at": [
+          2,
+          2
+        ]
+      },
+      "series": {
+        "at": [
+          7,
+          2
+        ]
+      },
+      "pulldown": {
+        "at": [
+          7,
+          6
+        ]
+      },
+      "upper": {
+        "at": [
+          11,
+          6
+        ]
+      },
+      "lower": {
+        "at": [
+          11,
+          10
+        ]
+      },
+      "indicator": {
+        "at": [
+          7,
+          14
+        ]
+      },
+      "led_limit": {
+        "at": [
+          7,
+          10
+        ]
+      },
+      "driver": {
+        "at": [
+          12,
+          14
+        ]
+      }
+    }
+  }
+}

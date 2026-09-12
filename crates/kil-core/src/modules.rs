@@ -31,6 +31,7 @@ pub struct Resolution {
 }
 pub fn resolve(source: &Project, file: &Path) -> Resolution {
     let project = ResolvedProject {
+        power_sources: vec![],
         schema: source.schema.clone(),
         library_fingerprint: String::new(),
         format_version: source.format_version,
@@ -40,6 +41,7 @@ pub fn resolve(source: &Project, file: &Path) -> Resolution {
         nets: IndexMap::new(),
         schematic: Schematic::default(),
         pcb: Pcb {
+            keepouts: vec![],
             stackup: source.pcb.stackup.clone().unwrap_or_default(),
             outline: source.pcb.outline.clone(),
             placement: IndexMap::new(),
@@ -142,6 +144,12 @@ pub fn resolve(source: &Project, file: &Path) -> Resolution {
         .project
         .schematic
         .no_connect
+        .iter()
+        .map(|s| canonical(s))
+        .collect();
+    result.project.power_sources = result
+        .project
+        .power_sources
         .iter()
         .map(|s| canonical(s))
         .collect();
@@ -265,6 +273,9 @@ fn expand(
             .or_default()
             .extend(endpoints.iter().map(|e| qualify(prefix, e)));
     }
+    r.project
+        .power_sources
+        .extend(circuit.power_sources.iter().map(|e| qualify(prefix, e)));
     r.project
         .schematic
         .no_connect
@@ -681,6 +692,22 @@ mod instance_tests {
             file,
         )
     }
+    #[test]
+    fn mixed_io_reference_resolves_without_expanding_the_authoring_format() {
+        let file =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/mixed-io/project.kil.json");
+        let source: Project = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+        let before = serde_json::to_value(&source).unwrap();
+        let result = resolve(&source, &file);
+        assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+        assert_eq!(result.project.components.len(), 203);
+        assert_eq!(result.project.schematic.sheets.len(), 24);
+        assert_eq!(result.project.pcb.stackup.layers, 4);
+        assert_eq!(result.project.power_sources, ["power.1", "power.2"]);
+        assert_eq!(result.project.nets["AIN0"].len(), 8);
+        assert_eq!(serde_json::to_value(&source).unwrap(), before);
+    }
+
     #[test]
     fn empty_terminal_is_rejected() {
         let (mut source, file) = example();

@@ -1,0 +1,873 @@
+{
+  "format_version": 2,
+  "project": {
+    "name": "mixed-io",
+    "title": "Mixed I/O compiler reference"
+  },
+  "circuit": {
+    "parts": {
+      "mcu": {
+        "symbol": "MCU_ST_STM32F1:STM32F103C8Tx",
+        "footprint": "Package_QFP:LQFP-48_7x7mm_P0.5mm",
+        "value": "STM32F103C8T6",
+        "reference_prefix": "U"
+      },
+      "power": {
+        "symbol": "Connector_Generic:Conn_01x02",
+        "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+        "value": "3V3 IN",
+        "reference_prefix": "J"
+      },
+      "debug": {
+        "symbol": "Connector_Generic:Conn_01x05",
+        "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical",
+        "value": "SWD",
+        "reference_prefix": "J"
+      },
+      "boot": {
+        "symbol": "Device:R",
+        "footprint": "Resistor_SMD:R_0603_1608Metric",
+        "value": "10k",
+        "reference_prefix": "R"
+      },
+      "reset_pullup": {
+        "symbol": "Device:R",
+        "footprint": "Resistor_SMD:R_0603_1608Metric",
+        "value": "10k",
+        "reference_prefix": "R"
+      },
+      "reset_filter": {
+        "symbol": "Device:C",
+        "footprint": "Capacitor_SMD:C_0603_1608Metric",
+        "value": "100n",
+        "reference_prefix": "C"
+      },
+      "decouple0": {
+        "symbol": "Device:C",
+        "footprint": "Capacitor_SMD:C_0603_1608Metric",
+        "value": "100n",
+        "reference_prefix": "C"
+      },
+      "decouple1": {
+        "symbol": "Device:C",
+        "footprint": "Capacitor_SMD:C_0603_1608Metric",
+        "value": "100n",
+        "reference_prefix": "C"
+      },
+      "decouple2": {
+        "symbol": "Device:C",
+        "footprint": "Capacitor_SMD:C_0603_1608Metric",
+        "value": "100n",
+        "reference_prefix": "C"
+      },
+      "decouple3": {
+        "symbol": "Device:C",
+        "footprint": "Capacitor_SMD:C_0603_1608Metric",
+        "value": "100n",
+        "reference_prefix": "C"
+      },
+      "decouple4": {
+        "symbol": "Device:C",
+        "footprint": "Capacitor_SMD:C_0603_1608Metric",
+        "value": "4.7u",
+        "reference_prefix": "C"
+      }
+    },
+    "nets": {
+      "3V3": [
+        "power.1",
+        "mcu.1",
+        "mcu.9",
+        "mcu.24",
+        "mcu.36",
+        "mcu.48",
+        "reset_pullup.1",
+        "debug.1",
+        "decouple0.1",
+        "decouple1.1",
+        "decouple2.1",
+        "decouple3.1",
+        "decouple4.1"
+      ],
+      "GND": [
+        "power.2",
+        "mcu.8",
+        "mcu.23",
+        "mcu.35",
+        "mcu.47",
+        "boot.2",
+        "reset_filter.2",
+        "debug.2",
+        "decouple0.2",
+        "decouple1.2",
+        "decouple2.2",
+        "decouple3.2",
+        "decouple4.2"
+      ],
+      "BOOT": [
+        "mcu.44",
+        "boot.1"
+      ],
+      "RESET": [
+        "mcu.7",
+        "reset_pullup.2",
+        "reset_filter.1",
+        "debug.5"
+      ],
+      "SWDIO": [
+        "mcu.34",
+        "debug.3"
+      ],
+      "SWCLK": [
+        "mcu.37",
+        "debug.4"
+      ],
+      "AIN0": [
+        "mcu.10"
+      ],
+      "AIN1": [
+        "mcu.11"
+      ],
+      "AIN2": [
+        "mcu.12"
+      ],
+      "AIN3": [
+        "mcu.13"
+      ],
+      "AIN4": [
+        "mcu.14"
+      ],
+      "AIN5": [
+        "mcu.15"
+      ],
+      "AIN6": [
+        "mcu.16"
+      ],
+      "AIN7": [
+        "mcu.17"
+      ],
+      "DIO0": [
+        "mcu.18"
+      ],
+      "DIO1": [
+        "mcu.19"
+      ],
+      "DIO2": [
+        "mcu.21"
+      ],
+      "DIO3": [
+        "mcu.22"
+      ],
+      "DIO4": [
+        "mcu.25"
+      ],
+      "DIO5": [
+        "mcu.26"
+      ],
+      "DIO6": [
+        "mcu.27"
+      ],
+      "DIO7": [
+        "mcu.28"
+      ],
+      "DIO8": [
+        "mcu.29"
+      ],
+      "DIO9": [
+        "mcu.30"
+      ],
+      "DIO10": [
+        "mcu.31"
+      ],
+      "DIO11": [
+        "mcu.32"
+      ],
+      "DIO12": [
+        "mcu.33"
+      ],
+      "DIO13": [
+        "mcu.38"
+      ],
+      "DIO14": [
+        "mcu.45"
+      ],
+      "DIO15": [
+        "mcu.46"
+      ]
+    },
+    "instances": {
+      "analog00": {
+        "source": "blocks/analog.kil.json",
+        "connections": {
+          "signal": "AIN0",
+          "vcc": "3V3",
+          "gnd": "GND"
+        },
+        "schematic": {},
+        "pcb": {
+          "at": [
+            10,
+            10
+          ]
+        }
+      },
+      "analog01": {
+        "source": "blocks/analog.kil.json",
+        "connections": {
+          "signal": "AIN1",
+          "vcc": "3V3",
+          "gnd": "GND"
+        },
+        "schematic": {},
+        "pcb": {
+          "at": [
+            28,
+            10
+          ]
+        }
+      },
+      "analog02": {
+        "source": "blocks/analog.kil.json",
+        "connections": {
+          "signal": "AIN2",
+          "vcc": "3V3",
+          "gnd": "GND"
+        },
+        "schematic": {},
+        "pcb": {
+          "at": [
+            46,
+            10
+          ]
+        }
+      },
+      "analog03": {
+        "source": "blocks/analog.kil.json",
+        "connections": {
+          "signal": "AIN3",
+          "vcc": "3V3",
+          "gnd": "GND"
+        },
+        "schematic": {},
+        "pcb": {
+          "at": [
+            64,
+            10
+          ]
+        }
+      },
+      "analog04": {
+        "source": "blocks/analog.kil.json",
+        "connections": {
+          "signal": "AIN4",
+          "vcc": "3V3",
+          "gnd": "GND"
+        },
+        "schematic": {},
+        "pcb": {
+          "at": [
+            82,
+            10
+          ]
+        }
+      },
+      "analog05": {
+        "source": "blocks/analog.kil.json",
+        "connections": {
+          "signal": "AIN5",
+          "vcc": "3V3",
+          "gnd": "GND"
+        },
+        "schematic": {},
+        "pcb": {
+          "at": [
+            100,
+            10
+          ]
+        }
+      },
+      "analog06": {
+        "source": "blocks/analog.kil.json",
+        "connections": {
+          "signal": "AIN6",
+          "vcc": "3V3",
+          "gnd": "GND"
+        },
+        "schematic": {},
+        "pcb": {
+          "at": [
+            118,
+            10
+          ]
+        }
+      },
+      "analog07": {
+        "source": "blocks/analog.kil.json",
+        "connections": {
+          "signal": "AIN7",
+          "vcc": "3V3",
+          "gnd": "GND"
+        },
+        "schematic": {},
+        "pcb": {
+          "at": [
+            136,
+            10
+          ]
+        }
+      },
+      "digital00": {
+        "source": "blocks/digital.kil.json",
+        "connections": {
+          "signal": "DIO0",
+          "vcc": "3V3",
+          "gnd": "GND"
+        },
+        "schematic": {},
+        "pcb": {
+          "at": [
+            10,
+            55
+          ]
+        }
+      },
+      "digital01": {
+        "source": "blocks/digital.kil.json",
+        "connections": {
+          "signal": "DIO1",
+          "vcc": "3V3",
+          "gnd": "GND"
+        },
+        "schematic": {},
+        "pcb": {
+          "at": [
+            28,
+            55
+          ]
+        }
+      },
+      "digital02": {
+        "source": "blocks/digital.kil.json",
+        "connections": {
+          "signal": "DIO2",
+          "vcc": "3V3",
+          "gnd": "GND"
+        },
+        "schematic": {},
+        "pcb": {
+          "at": [
+            46,
+            55
+          ]
+        }
+      },
+      "digital03": {
+        "source": "blocks/digital.kil.json",
+        "connections": {
+          "signal": "DIO3",
+          "vcc": "3V3",
+          "gnd": "GND"
+        },
+        "schematic": {},
+        "pcb": {
+          "at": [
+            64,
+            55
+          ]
+        }
+      },
+      "digital04": {
+        "source": "blocks/digital.kil.json",
+        "connections": {
+          "signal": "DIO4",
+          "vcc": "3V3",
+          "gnd": "GND"
+        },
+        "schematic": {},
+        "pcb": {
+          "at": [
+            82,
+            55
+          ]
+        }
+      },
+      "digital05": {
+        "source": "blocks/digital.kil.json",
+        "connections": {
+          "signal": "DIO5",
+          "vcc": "3V3",
+          "gnd": "GND"
+        },
+        "schematic": {},
+        "pcb": {
+          "at": [
+            100,
+            55
+          ]
+        }
+      },
+      "digital06": {
+        "source": "blocks/digital.kil.json",
+        "connections": {
+          "signal": "DIO6",
+          "vcc": "3V3",
+          "gnd": "GND"
+        },
+        "schematic": {},
+        "pcb": {
+          "at": [
+            118,
+            55
+          ]
+        }
+      },
+      "digital07": {
+        "source": "blocks/digital.kil.json",
+        "connections": {
+          "signal": "DIO7",
+          "vcc": "3V3",
+          "gnd": "GND"
+        },
+        "schematic": {},
+        "pcb": {
+          "at": [
+            136,
+            55
+          ]
+        }
+      },
+      "digital08": {
+        "source": "blocks/digital.kil.json",
+        "connections": {
+          "signal": "DIO8",
+          "vcc": "3V3",
+          "gnd": "GND"
+        },
+        "schematic": {},
+        "pcb": {
+          "at": [
+            10,
+            80
+          ]
+        }
+      },
+      "digital09": {
+        "source": "blocks/digital.kil.json",
+        "connections": {
+          "signal": "DIO9",
+          "vcc": "3V3",
+          "gnd": "GND"
+        },
+        "schematic": {},
+        "pcb": {
+          "at": [
+            28,
+            80
+          ]
+        }
+      },
+      "digital10": {
+        "source": "blocks/digital.kil.json",
+        "connections": {
+          "signal": "DIO10",
+          "vcc": "3V3",
+          "gnd": "GND"
+        },
+        "schematic": {},
+        "pcb": {
+          "at": [
+            46,
+            80
+          ]
+        }
+      },
+      "digital11": {
+        "source": "blocks/digital.kil.json",
+        "connections": {
+          "signal": "DIO11",
+          "vcc": "3V3",
+          "gnd": "GND"
+        },
+        "schematic": {},
+        "pcb": {
+          "at": [
+            64,
+            80
+          ]
+        }
+      },
+      "digital12": {
+        "source": "blocks/digital.kil.json",
+        "connections": {
+          "signal": "DIO12",
+          "vcc": "3V3",
+          "gnd": "GND"
+        },
+        "schematic": {},
+        "pcb": {
+          "at": [
+            82,
+            80
+          ]
+        }
+      },
+      "digital13": {
+        "source": "blocks/digital.kil.json",
+        "connections": {
+          "signal": "DIO13",
+          "vcc": "3V3",
+          "gnd": "GND"
+        },
+        "schematic": {},
+        "pcb": {
+          "at": [
+            100,
+            80
+          ]
+        }
+      },
+      "digital14": {
+        "source": "blocks/digital.kil.json",
+        "connections": {
+          "signal": "DIO14",
+          "vcc": "3V3",
+          "gnd": "GND"
+        },
+        "schematic": {},
+        "pcb": {
+          "at": [
+            118,
+            80
+          ]
+        }
+      },
+      "digital15": {
+        "source": "blocks/digital.kil.json",
+        "connections": {
+          "signal": "DIO15",
+          "vcc": "3V3",
+          "gnd": "GND"
+        },
+        "schematic": {},
+        "pcb": {
+          "at": [
+            136,
+            80
+          ]
+        }
+      }
+    },
+    "unconnected": [
+      "mcu.2",
+      "mcu.3",
+      "mcu.4",
+      "mcu.5",
+      "mcu.6",
+      "mcu.20",
+      "mcu.39",
+      "mcu.40",
+      "mcu.41",
+      "mcu.42",
+      "mcu.43"
+    ],
+    "power_sources": [
+      "power.1",
+      "power.2"
+    ]
+  },
+  "schematic": {
+    "symbols": {
+      "mcu": {
+        "part": "mcu",
+        "unit": 1,
+        "at": [
+          76.2,
+          76.2
+        ]
+      },
+      "power": {
+        "part": "power",
+        "unit": 1,
+        "at": [
+          127.0,
+          50.8
+        ]
+      },
+      "debug": {
+        "part": "debug",
+        "unit": 1,
+        "at": [
+          157.48,
+          50.8
+        ]
+      },
+      "boot": {
+        "part": "boot",
+        "unit": 1,
+        "at": [
+          187.96,
+          50.8
+        ]
+      },
+      "reset_pullup": {
+        "part": "reset_pullup",
+        "unit": 1,
+        "at": [
+          218.44,
+          50.8
+        ]
+      },
+      "reset_filter": {
+        "part": "reset_filter",
+        "unit": 1,
+        "at": [
+          127.0,
+          81.28
+        ]
+      },
+      "decouple0": {
+        "part": "decouple0",
+        "unit": 1,
+        "at": [
+          157.48,
+          81.28
+        ]
+      },
+      "decouple1": {
+        "part": "decouple1",
+        "unit": 1,
+        "at": [
+          187.96,
+          81.28
+        ]
+      },
+      "decouple2": {
+        "part": "decouple2",
+        "unit": 1,
+        "at": [
+          218.44,
+          81.28
+        ]
+      },
+      "decouple3": {
+        "part": "decouple3",
+        "unit": 1,
+        "at": [
+          127.0,
+          111.76
+        ]
+      },
+      "decouple4": {
+        "part": "decouple4",
+        "unit": 1,
+        "at": [
+          157.48,
+          111.76
+        ]
+      }
+    }
+  },
+  "pcb": {
+    "stackup": {
+      "layers": 4
+    },
+    "outline": [
+      [
+        0,
+        0
+      ],
+      [
+        165,
+        0
+      ],
+      [
+        165,
+        112
+      ],
+      [
+        0,
+        112
+      ]
+    ],
+    "placement": {
+      "mcu": {
+        "at": [
+          80,
+          40
+        ]
+      },
+      "power": {
+        "at": [
+          152,
+          38
+        ]
+      },
+      "debug": {
+        "at": [
+          138,
+          34
+        ]
+      },
+      "boot": {
+        "at": [
+          69,
+          34
+        ]
+      },
+      "reset_pullup": {
+        "at": [
+          69,
+          39
+        ]
+      },
+      "reset_filter": {
+        "at": [
+          69,
+          44
+        ]
+      },
+      "decouple0": {
+        "at": [
+          74,
+          33
+        ]
+      },
+      "decouple1": {
+        "at": [
+          86,
+          33
+        ]
+      },
+      "decouple2": {
+        "at": [
+          86,
+          47
+        ]
+      },
+      "decouple3": {
+        "at": [
+          74,
+          47
+        ]
+      },
+      "decouple4": {
+        "at": [
+          93,
+          40
+        ]
+      }
+    },
+    "holes": [
+      {
+        "at": [
+          5,
+          5
+        ],
+        "diameter": 3.2
+      },
+      {
+        "at": [
+          160,
+          5
+        ],
+        "diameter": 3.2
+      },
+      {
+        "at": [
+          5,
+          107
+        ],
+        "diameter": 3.2
+      },
+      {
+        "at": [
+          160,
+          107
+        ],
+        "diameter": 3.2
+      }
+    ],
+    "keepouts": [
+      {
+        "outline": [
+          [
+            1,
+            30
+          ],
+          [
+            5,
+            30
+          ],
+          [
+            5,
+            45
+          ],
+          [
+            1,
+            45
+          ]
+        ]
+      }
+    ],
+    "zones": [
+      {
+        "net": "GND",
+        "layer": "In1.Cu",
+        "outline": [
+          [
+            1,
+            1
+          ],
+          [
+            164,
+            1
+          ],
+          [
+            164,
+            111
+          ],
+          [
+            1,
+            111
+          ]
+        ],
+        "solid": true
+      },
+      {
+        "net": "3V3",
+        "layer": "In2.Cu",
+        "outline": [
+          [
+            1,
+            1
+          ],
+          [
+            164,
+            1
+          ],
+          [
+            164,
+            111
+          ],
+          [
+            1,
+            111
+          ]
+        ],
+        "solid": true
+      }
+    ]
+  },
+  "build": {
+    "routing": {
+      "engine": "kicad-routing-tools",
+      "nets": [
+        "*"
+      ]
+    }
+  },
+  "rules": {
+    "minimum_track_width": 0.15,
+    "preferred_track_width": 0.2
+  }
+}

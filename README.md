@@ -151,3 +151,17 @@ Keep using `schematic.symbols` for a single sheet. To organize a larger drawing,
 Each page has independent coordinates. Existing top-level drawing fields stay on the root sheet. Sheet names do not change part identities or circuit connectivity: the compiler connects sheets from `circuit.nets`, without another set of user-maintained electrical ports. Module ports still define circuit interfaces. A module can supply named sheets; repeated instances receive distinct page identities. A parent can instead omit the module's schematic transform and place its parts on its own pages.
 
 Generated child files live in `<project>.sheets/`, owned by the compiler and replaced with the other generated artifacts on every build. Sheet filenames are stable generated identifiers, not source paths. See `examples/multi-sheet-divider.kil.json`.
+
+### External power and reserved board areas
+
+Declare externally powered connector terminals with `circuit.power_sources`, for example `["supply.1", "supply.2"]` for supply and return. KIL generates KiCad's standard power flags on those terminals and locks the symbol library content. These declarations do not create nets or physical parts. Connect the terminals in `circuit.nets` as usual. Regulator power-output pins need no flag.
+
+Reserve a region with `pcb.keepouts`:
+
+```json
+"keepouts": [{"outline": [[1, 1], [4, 1], [4, 8], [1, 8]]}]
+```
+
+A keepout excludes tracks, vias, pads, planes, and footprints. Omit `layers` to cover all copper layers, or specify a list such as `["F.Cu"]`. Modules can supply keepouts in their local PCB coordinates.
+
+The [mixed I/O reference](examples/mixed-io/README.md) exercises these features with 203 parts, 24 repeated channel modules, 24 child schematic sheets, and four copper layers.

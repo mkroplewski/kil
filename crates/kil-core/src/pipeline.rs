@@ -544,6 +544,20 @@ pub fn route(options: &RouteOptions) -> RouteOutcome {
             return invalid_route(diagnostics, loaded.source);
         }
     };
+    let fabrication_limits = staging.path().join("kil-fabrication-limits.txt");
+    if let Err(e) = fs::write(
+        &fabrication_limits,
+        format!(
+            "track_width = {}\nclearance = {}\nvia_diameter = {}\nvia_drill = {}\n",
+            project.rules.minimum_track_width,
+            project.rules.clearance,
+            project.rules.via_size,
+            project.rules.via_drill
+        ),
+    ) {
+        diagnostics.push(Diagnostic::error("ROUTE022", e.to_string(), &options.input));
+        return invalid_route(diagnostics, loaded.source);
+    }
     let mut command = Command::new(&python);
     command.arg(&router).arg(&input_board).arg(&routed_board);
     if !selected_nets.is_empty() {
@@ -553,6 +567,7 @@ pub fn route(options: &RouteOptions) -> RouteOutcome {
         .arg("--layers")
         .args(project.pcb.stackup.copper_layers());
     command.args(&policy.extra_args);
+    command.arg("--fab-overrides").arg(&fabrication_limits);
     let result = match command.output() {
         Ok(result) => result,
         Err(err) => {

@@ -23,6 +23,8 @@ pub enum Units {
 #[serde(deny_unknown_fields)]
 pub struct ResolvedProject {
     #[serde(default)]
+    pub power_sources: Vec<String>,
+    #[serde(default)]
     pub library_fingerprint: String,
     #[serde(rename = "$schema", default, skip_serializing)]
     #[schemars(with = "String")]
@@ -140,6 +142,8 @@ pub struct SchematicLabel {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Pcb {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keepouts: Vec<Keepout>,
     #[serde(default)]
     pub stackup: crate::stackup::Stackup,
     pub outline: Vec<Point>,
@@ -370,4 +374,14 @@ pub(crate) fn valid_net_class_name(name: &str) -> bool {
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+/// A region reserved from copper and component placement on the selected layers.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Keepout {
+    pub outline: Vec<Point>,
+    /// Empty means all copper layers.
+    #[serde(default)]
+    pub layers: Vec<String>,
 }

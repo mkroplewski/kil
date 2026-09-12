@@ -119,6 +119,42 @@ pub fn validate_basic(project: &ResolvedProject, file: &Path, source: &str) -> V
         }
     }
 
+    let mut power_sources = BTreeSet::new();
+    for endpoint in &project.power_sources {
+        if !power_sources.insert(endpoint)
+            || !project.nets.values().any(|pins| pins.contains(endpoint))
+        {
+            push(
+                Diagnostic::error(
+                    "NET010",
+                    format!(
+                        "power source '{endpoint}' must name a connected terminal exactly once"
+                    ),
+                    file,
+                ),
+                "/circuit/power_sources".into(),
+            );
+        }
+    }
+    for (index, area) in project.pcb.keepouts.iter().enumerate() {
+        if area.outline.len() < 3
+            || area
+                .outline
+                .iter()
+                .any(|p| !point_in_polygon(*p, &project.pcb.outline))
+            || area.layers.iter().collect::<BTreeSet<_>>().len() != area.layers.len()
+            || area.layers.iter().any(|l| !copper_layers.contains(l))
+        {
+            push(
+                Diagnostic::error(
+                    "PCB022",
+                    "keepout must be a board-contained polygon on declared copper layers",
+                    file,
+                ),
+                format!("/pcb/keepouts/{index}"),
+            );
+        }
+    }
     for reference in project.components.keys() {
         if !project
             .schematic
@@ -402,7 +438,11 @@ pub fn validate_basic(project: &ResolvedProject, file: &Path, source: &str) -> V
                 push(
                     Diagnostic::error(
                         "RULE005",
-                        format!("route on '{net}' violates width or allowed layer requirements"),
+                        format!(
+                            "route on '{net}' has width {} on {}; minimum width is {min} and the layer must be allowed by its net class",
+                            route.width.unwrap_or(project.rules.width(net)),
+                            route.layer
+                        ),
                         file,
                     ),
                     format!("/pcb/routes/{net}"),
@@ -665,6 +705,19 @@ fn cross(a: Point, b: Point, p: Point) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keepouts_and_external_power_require_valid_board_and_circuit_targets() {
+        let (mut project, _) = crate::kicad::tests::fixture();
+        project.power_sources.push("missing.1".into());
+        project.pcb.keepouts.push(crate::model::Keepout {
+            outline: vec![[0., 0.], [1., 0.], [1., 1.]],
+            layers: vec!["In7.Cu".into()],
+        });
+        let diagnostics = validate_basic(&project, Path::new("test.json"), "");
+        assert!(diagnostics.iter().any(|d| d.code == "NET010"));
+        assert!(diagnostics.iter().any(|d| d.code == "PCB022"));
+    }
 
     #[test]
     fn net_classes_reject_thin_tracks_and_forbidden_layers() {
