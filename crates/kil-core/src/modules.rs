@@ -270,26 +270,42 @@ fn expand(
         .no_connect
         .extend(circuit.unconnected.iter().map(|e| qualify(prefix, e)));
     if let Some(transform) = sch {
-        let mut schematic = Schematic {
-            placement: IndexMap::new(),
-            wires: view.wires.clone(),
-            labels: view.labels.clone(),
-            no_connect: vec![],
-        };
-        for (id, symbol) in &view.symbols {
-            let mut symbol = symbol.clone();
-            symbol.part = qualify(prefix, &symbol.part);
-            schematic.placement.insert(qualify(prefix, id), symbol);
-        }
-        merge_schematic(
-            &mut r.project.schematic,
-            schematic,
+        merge_page(
+            r,
+            &view.symbols,
+            &view.wires,
+            &view.labels,
+            "",
+            prefix,
             transform,
             &net,
             file,
-            &mut r.diagnostics,
         );
+        for (page, contents) in &view.sheets {
+            if !valid_block_id(page) {
+                r.diagnostics.push(Diagnostic::error(
+                    "SCH006",
+                    "sheet names must be identifiers",
+                    file,
+                ));
+                continue;
+            }
+            let sheet = qualify(prefix, page);
+            r.project.schematic.sheets.insert(sheet.clone());
+            merge_page(
+                r,
+                &contents.symbols,
+                &contents.wires,
+                &contents.labels,
+                &sheet,
+                prefix,
+                transform,
+                &net,
+                file,
+            );
+        }
     }
+
     for (id, instance) in &circuit.instances {
         if !valid_block_id(id) || circuit.parts.contains_key(id) {
             r.diagnostics.push(Diagnostic::error(
@@ -500,6 +516,50 @@ fn substitute(
     }
     Ok(())
 }
+#[allow(clippy::too_many_arguments)]
+fn merge_page(
+    r: &mut Resolution,
+    symbols: &IndexMap<String, SchematicPlacement>,
+    wires: &[SchematicWire],
+    labels: &[SchematicLabel],
+    sheet: &str,
+    prefix: &str,
+    transform: Transform,
+    map_net: &dyn Fn(&str) -> String,
+    file: &Path,
+) {
+    let mut schematic = Schematic {
+        wires: wires.to_vec(),
+        labels: labels.to_vec(),
+        ..Default::default()
+    };
+    for (id, symbol) in symbols {
+        let mut symbol = symbol.clone();
+        symbol.part = qualify(prefix, &symbol.part);
+        symbol.sheet = sheet.into();
+        let view_id = if sheet.is_empty() {
+            qualify(prefix, id)
+        } else {
+            qualify(sheet, id)
+        };
+        schematic.placement.insert(view_id, symbol);
+    }
+    for wire in &mut schematic.wires {
+        wire.sheet = sheet.into();
+    }
+    for label in &mut schematic.labels {
+        label.sheet = sheet.into();
+    }
+    merge_schematic(
+        &mut r.project.schematic,
+        schematic,
+        transform,
+        map_net,
+        file,
+        &mut r.diagnostics,
+    );
+}
+
 fn merge_schematic(
     target: &mut Schematic,
     mut source: Schematic,

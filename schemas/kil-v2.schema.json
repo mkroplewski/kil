@@ -645,6 +645,33 @@
       ],
       "type": "object"
     },
+    "SchematicPage": {
+      "additionalProperties": false,
+      "properties": {
+        "labels": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SchematicLabel"
+          },
+          "type": "array"
+        },
+        "symbols": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SchematicPlacement"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "wires": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SchematicWire"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "SchematicPlacement": {
       "additionalProperties": false,
       "properties": {
@@ -687,6 +714,14 @@
             "$ref": "#/$defs/SchematicLabel"
           },
           "type": "array"
+        },
+        "sheets": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SchematicPage"
+          },
+          "default": {},
+          "description": "Optional named pages. Circuit connectivity does not depend on page organization.",
+          "type": "object"
         },
         "symbols": {
           "additionalProperties": {
@@ -977,6 +1012,7 @@
       "$ref": "#/$defs/SchematicView",
       "default": {
         "labels": [],
+        "sheets": {},
         "symbols": {},
         "wires": []
       }

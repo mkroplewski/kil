@@ -91,6 +91,8 @@ pub struct Component {
 #[serde(deny_unknown_fields)]
 pub struct Schematic {
     #[serde(default)]
+    pub sheets: std::collections::BTreeSet<String>,
+    #[serde(default)]
     pub placement: IndexMap<String, SchematicPlacement>,
     #[serde(default)]
     pub wires: Vec<SchematicWire>,
@@ -103,6 +105,9 @@ pub struct Schematic {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SchematicPlacement {
+    /// Resolved page identity, assigned by the enclosing source page.
+    #[serde(skip)]
+    pub sheet: String,
     pub part: String,
     pub unit: u32,
     pub at: Point,
@@ -113,6 +118,9 @@ pub struct SchematicPlacement {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SchematicWire {
+    /// Resolved page identity, assigned by the enclosing source page.
+    #[serde(skip)]
+    pub sheet: String,
     pub net: String,
     pub path: Vec<Point>,
 }
@@ -120,6 +128,9 @@ pub struct SchematicWire {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SchematicLabel {
+    /// Resolved page identity, assigned by the enclosing source page.
+    #[serde(skip)]
+    pub sheet: String,
     pub net: String,
     pub at: Point,
     #[serde(default)]

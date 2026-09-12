@@ -1,6 +1,6 @@
 # KIL
 
-KIL compiles declarative circuit and layout intent into a KiCad 10 project. Edit `*.kil.json`; generated KiCad files are disposable output. The format is experimental and currently supports one schematic sheet and 2–32 copper layers.
+KIL compiles declarative circuit and layout intent into a KiCad 10 project. Edit `*.kil.json`; generated KiCad files are disposable output. The format is experimental and currently supports multiple schematic sheets and 2–32 copper layers.
 
 ## Format 2
 
@@ -134,3 +134,20 @@ Layers are named `F.Cu`, `In1.Cu`, `In2.Cu`, and `B.Cu`. Routes, planes, and net
 Default copper is 0.035 mm thick, with the remaining thickness distributed evenly as FR4. These are generation defaults, not a manufacturer-approved impedance stackup. For a fabrication specification, set `thickness`, `copper_thickness`, and `dielectrics` in `stackup`. Each dielectric specifies its `thickness`, optionally `material` and `epsilon_r`, in order between adjacent copper layers. Thicknesses must add up. Only the root project defines the board stackup.
 
 Planes support optional `priority`, `solid`, `thermal_gap`, and `thermal_width`. The defaults retain thermal pad connections. See `examples/four-layer-divider.kil.json` for a checked inner-layer route and ground plane. Blind/buried vias and microvias are not supported.
+
+### Schematic sheets
+
+Keep using `schematic.symbols` for a single sheet. To organize a larger drawing, put the same `symbols`, `wires`, and `labels` inside named `schematic.sheets`:
+
+```json
+"schematic": {
+  "sheets": {
+    "power": { "symbols": { "regulator": { "part": "regulator", "unit": 1, "at": [50.8, 50.8] } } },
+    "io": { "symbols": { "connector": { "part": "connector", "unit": 1, "at": [50.8, 50.8] } } }
+  }
+}
+```
+
+Each page has independent coordinates. Existing top-level drawing fields stay on the root sheet. Sheet names do not change part identities or circuit connectivity: the compiler connects sheets from `circuit.nets`, without another set of user-maintained electrical ports. Module ports still define circuit interfaces. A module can supply named sheets; repeated instances receive distinct page identities. A parent can instead omit the module's schematic transform and place its parts on its own pages.
+
+Generated child files live in `<project>.sheets/`, owned by the compiler and replaced with the other generated artifacts on every build. Sheet filenames are stable generated identifiers, not source paths. See `examples/multi-sheet-divider.kil.json`.

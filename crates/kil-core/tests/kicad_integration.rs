@@ -33,11 +33,17 @@ fn checks_repeated_modules_and_detects_schematic_short() {
     other["schematic"]["at"] = serde_json::json!([100.33, 50.8]);
     root["circuit"]["instances"]["other"] = other;
     root["pcb"]["outline"] = serde_json::json!([[0, 0], [30, 0], [30, 14], [0, 14]]);
-    fs::write(
-        dir.path().join("module.json"),
-        include_str!("../../../examples/modular-resistors/blocks/divider.kil.json"),
-    )
+    let mut module: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../examples/modular-resistors/blocks/divider.kil.json"
+    ))
     .unwrap();
+    let symbols = module["schematic"]
+        .as_object_mut()
+        .unwrap()
+        .remove("symbols")
+        .unwrap();
+    module["schematic"]["sheets"] = serde_json::json!({"divider": {"symbols": symbols}});
+    fs::write(dir.path().join("module.json"), module.to_string()).unwrap();
     fs::write(&input, root.to_string()).unwrap();
     lock(&input);
     let options = BuildOptions {
@@ -220,4 +226,41 @@ fn four_layer_board_preserves_inner_copper_and_planes() {
         kil_core::routing::extract_route_cache(&loaded.project.unwrap(), &board, None).unwrap();
     assert!(cache.routes["SIGNAL"].iter().any(|r| r.layer == "In1.Cu"));
     assert_eq!(cache.vias.len(), 3);
+}
+
+#[test]
+#[ignore = "requires KiCad 10; set KIL_KICAD_CLI"]
+fn multi_sheet_connectivity_and_removed_sheet_publication() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("project.kil.json");
+    let mut source: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../examples/multi-sheet-divider.kil.json"
+    ))
+    .unwrap();
+    fs::write(&input, source.to_string()).unwrap();
+    lock(&input);
+    let output = dir.path().join("output");
+    let options = BuildOptions {
+        input: input.clone(),
+        output: Some(output.clone()),
+        kicad_cli: Some(cli()),
+    };
+    let result = kil_core::build(&options);
+    assert_eq!(result.exit, ExitClass::Success, "{:?}", result.diagnostics);
+    let sheets = output.join("multi-sheet-divider.sheets");
+    assert_eq!(fs::read_dir(&sheets).unwrap().count(), 2);
+    let pages = source["schematic"]
+        .as_object_mut()
+        .unwrap()
+        .remove("sheets")
+        .unwrap();
+    let mut symbols = serde_json::Map::new();
+    for page in pages.as_object().unwrap().values() {
+        symbols.extend(page["symbols"].as_object().unwrap().clone());
+    }
+    source["schematic"]["symbols"] = symbols.into();
+    fs::write(&input, source.to_string()).unwrap();
+    let result = kil_core::build(&options);
+    assert_eq!(result.exit, ExitClass::Success, "{:?}", result.diagnostics);
+    assert_eq!(fs::read_dir(&sheets).unwrap().count(), 0);
 }

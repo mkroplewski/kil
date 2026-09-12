@@ -52,6 +52,19 @@ pub struct Part {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SchematicView {
+    /// Optional named pages. Circuit connectivity does not depend on page organization.
+    #[serde(default)]
+    pub sheets: IndexMap<String, SchematicPage>,
+    #[serde(default)]
+    pub symbols: IndexMap<String, SchematicPlacement>,
+    #[serde(default)]
+    pub wires: Vec<SchematicWire>,
+    #[serde(default)]
+    pub labels: Vec<SchematicLabel>,
+}
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SchematicPage {
     #[serde(default)]
     pub symbols: IndexMap<String, SchematicPlacement>,
     #[serde(default)]
