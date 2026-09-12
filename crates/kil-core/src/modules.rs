@@ -252,10 +252,9 @@ fn expand(
             ));
         }
         for endpoint in endpoints {
-            if endpoint
-                .split_once('.')
-                .is_none_or(|(part, _)| !circuit.parts.contains_key(part))
-            {
+            if endpoint.split_once('.').is_none_or(|(part, terminal)| {
+                terminal.is_empty() || !circuit.parts.contains_key(part)
+            }) {
                 r.diagnostics.push(Diagnostic::error("NET009",format!("'{endpoint}' is not a local part terminal; connect instances through their ports"),file));
             }
         }
@@ -622,6 +621,25 @@ mod instance_tests {
         )
     }
     #[test]
+    fn empty_terminal_is_rejected() {
+        let (mut source, file) = example();
+        source.circuit.instances.clear();
+        source.circuit.parts.insert("R1".into(), serde_json::from_value(serde_json::json!({
+            "symbol":"Device:R", "footprint":"Resistor_SMD:R_0603_1608Metric", "reference_prefix":"R"
+        })).unwrap());
+        source
+            .circuit
+            .nets
+            .insert("SIGNAL".into(), vec!["R1.".into()]);
+        assert!(
+            resolve(&source, &file)
+                .diagnostics
+                .iter()
+                .any(|d| d.code == "NET009")
+        );
+    }
+
+    #[test]
     fn missing_project_directory_is_an_error() {
         let (source, _) = example();
         let dir = tempfile::tempdir().unwrap();
@@ -689,8 +707,8 @@ mod instance_tests {
             "../../../examples/modular-resistors/blocks/divider.kil.json"
         ))
         .unwrap();
-        module["parameters"] = serde_json::json!({"x":{"type":"number","default":2.0}});
-        module["pcb"]["placement"]["R1"]["at"][0] = serde_json::json!("${x}");
+        module["parameters"] = serde_json::json!({"foo.bar":{"type":"number","default":2.0}});
+        module["pcb"]["placement"]["R1"]["at"][0] = serde_json::json!("${foo.bar}");
         fs::write(dir.path().join("module.json"), module.to_string()).unwrap();
         source.circuit.instances["divider"].source = "module.json".into();
         let r = resolve(&source, &dir.path().join("project.json"));

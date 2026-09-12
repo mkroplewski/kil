@@ -37,7 +37,19 @@ impl GeneratedProject {
     }
 }
 
-pub fn generate(project: &ResolvedProject, libraries: &ResolvedLibraries) -> GeneratedProject {
+/// Generate KiCad artifacts, rejecting names that cannot safely appear in rule expressions.
+pub fn generate(
+    project: &ResolvedProject,
+    libraries: &ResolvedLibraries,
+) -> std::io::Result<GeneratedProject> {
+    for name in project.rules.net_classes.keys() {
+        if !crate::model::valid_net_class_name(name) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("invalid net-class name '{name}'"),
+            ));
+        }
+    }
     let schematic_node = schematic_node(project, libraries);
     let pcb_node = pcb_node(project, libraries);
     let schematic = CstDocument {
@@ -51,12 +63,12 @@ pub fn generate(project: &ResolvedProject, libraries: &ResolvedLibraries) -> Gen
     }
     .to_canonical_string();
     let project_json = project_json(project);
-    GeneratedProject {
+    Ok(GeneratedProject {
         design_rules: design_rules(project),
         project: project_json,
         schematic,
         pcb,
-    }
+    })
 }
 
 pub fn validate_generated(directory: &Path, name: &str) -> Result<(), String> {
@@ -1211,6 +1223,28 @@ pub(crate) mod tests {
     use std::time::{Duration, Instant};
 
     #[test]
+    fn generation_rejects_unsafe_net_class_names() {
+        let (mut project, libraries) = fixture();
+        for name in ["sig\"fast", "sig'fast", "sig\\fast"] {
+            project.rules.net_classes.clear();
+            project.rules.net_classes.insert(
+                name.into(),
+                crate::model::NetClass {
+                    nets: vec![],
+                    clearance: 0.2,
+                    minimum_track_width: 0.2,
+                    preferred_track_width: 0.25,
+                    allowed_layers: vec!["F.Cu".into()],
+                },
+            );
+            assert_eq!(
+                generate(&project, &libraries).unwrap_err().kind(),
+                std::io::ErrorKind::InvalidInput
+            );
+        }
+    }
+
+    #[test]
     fn back_side_geometry_is_mirrored_once_including_quoted_numbers() {
         let mut pad = list(vec![
             sym("pad"),
@@ -1280,8 +1314,8 @@ pub(crate) mod tests {
     #[test]
     fn generation_is_deterministic_and_parses_without_system_kicad() {
         let (project, libraries) = fixture();
-        let a = generate(&project, &libraries);
-        let b = generate(&project, &libraries);
+        let a = generate(&project, &libraries).unwrap();
+        let b = generate(&project, &libraries).unwrap();
         assert_eq!(a.schematic, b.schematic);
         assert_eq!(a.pcb, b.pcb);
         let dir = tempfile::tempdir().unwrap();
@@ -1293,10 +1327,11 @@ pub(crate) mod tests {
             stable_uuid(&project, "pcb/component/R1"),
             stable_uuid(&renamed, "pcb/component/R1")
         );
-        assert!(generate(&renamed, &libraries).pcb.contains("R99"));
+        assert!(generate(&renamed, &libraries).unwrap().pcb.contains("R99"));
         renamed.components.get_mut("R1").unwrap().value.clear();
         assert!(
             generate(&renamed, &libraries)
+                .unwrap()
                 .schematic
                 .contains("(property \"Value\" \"R99\"")
         );
@@ -1351,7 +1386,7 @@ pub(crate) mod tests {
                 .collect(),
         };
         let started = Instant::now();
-        let generated = generate(&project, &libraries);
+        let generated = generate(&project, &libraries).unwrap();
         let elapsed = started.elapsed();
         let native_bytes = generated.schematic.len() + generated.pcb.len();
         assert!(

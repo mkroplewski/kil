@@ -340,11 +340,7 @@ pub fn validate_basic(project: &ResolvedProject, file: &Path, source: &str) -> V
     }
     let mut assigned = BTreeSet::new();
     for (name, class) in &project.rules.net_classes {
-        if name == "Default"
-            || name.is_empty()
-            || !name
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        if !crate::model::valid_net_class_name(name)
             || class.minimum_track_width < project.rules.minimum_track_width
             || class.preferred_track_width < class.minimum_track_width
             || class.clearance < project.rules.clearance
@@ -395,11 +391,10 @@ pub fn validate_basic(project: &ResolvedProject, file: &Path, source: &str) -> V
         }
     }
     for via in &project.pcb.vias {
-        if project
-            .rules
-            .class(&via.net)
-            .is_some_and(|c| c.allowed_layers.len() != 2)
-        {
+        if project.rules.class(&via.net).is_some_and(|c| {
+            !c.allowed_layers.iter().any(|l| l == "F.Cu")
+                || !c.allowed_layers.iter().any(|l| l == "B.Cu")
+        }) {
             push(
                 Diagnostic::error(
                     "RULE005",
@@ -677,6 +672,20 @@ mod tests {
                 .any(|d| d.code == "RULE005")
         );
         project.pcb.routes["SIGNAL"][0].layer = "F.Cu".into();
+        project.pcb.vias.push(crate::model::Via {
+            net: "SIGNAL".into(),
+            at: [1., 2.],
+            size: None,
+            drill: None,
+            locked: false,
+        });
+        project.rules.net_classes["signals"].allowed_layers = vec!["F.Cu".into(), "F.Cu".into()];
+        assert!(
+            validate_basic(&project, Path::new("test.json"), "")
+                .iter()
+                .any(|d| d.code == "RULE005")
+        );
+        project.rules.net_classes["signals"].allowed_layers = vec!["F.Cu".into(), "B.Cu".into()];
         assert!(
             !validate_basic(&project, Path::new("test.json"), "")
                 .iter()

@@ -3,7 +3,7 @@
   "format_version": 2,
   "project": {
     "name": "routed-divider",
-    "title": "KiCad IL v1 smoke test",
+    "title": "KiCad IL v2 smoke test",
     "kicad": 10
   },
   "pcb": {
@@ -78,7 +78,7 @@
     ],
     "silk": [
       {
-        "text": "KIL v1",
+        "text": "KIL v2",
         "at": [
           9,
           2

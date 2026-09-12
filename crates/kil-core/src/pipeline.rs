@@ -485,7 +485,7 @@ pub fn route(options: &RouteOptions) -> RouteOutcome {
         }
     };
     let baseline = staging.path().join("baseline.kicad_pcb");
-    if let Err(e) = fs::write(&baseline, generate(&route_seed, &libraries).pcb) {
+    if let Err(e) = generate(&route_seed, &libraries).and_then(|g| fs::write(&baseline, g.pcb)) {
         diagnostics.push(Diagnostic::error("GEN001", e.to_string(), &options.input));
         return invalid_route(diagnostics, loaded.source);
     }
@@ -496,8 +496,9 @@ pub fn route(options: &RouteOptions) -> RouteOutcome {
             return invalid_route(diagnostics, loaded.source);
         }
     };
-    let generated = generate(&project, &libraries);
-    if let Err(err) = generated.write_to(staging.path(), &project.project.name) {
+    if let Err(err) = generate(&project, &libraries)
+        .and_then(|g| g.write_to(staging.path(), &project.project.name))
+    {
         diagnostics.push(Diagnostic::error(
             "GEN001",
             format!("cannot write staged project: {err}"),
@@ -535,13 +536,13 @@ pub fn route(options: &RouteOptions) -> RouteOutcome {
         .path()
         .join(format!("{}.routed.kicad_pcb", project.project.name));
 
-    let footprint_state = kiutils_kicad::PcbFile::read(&input_board).map(|d| {
-        d.ast()
-            .footprints
-            .iter()
-            .map(|f| (f.reference.clone(), f.at, f.rotation, f.layer.clone()))
-            .collect::<Vec<_>>()
-    });
+    let initial_footprints = match footprint_state(&input_board) {
+        Ok(state) => state,
+        Err(e) => {
+            diagnostics.push(Diagnostic::error("ROUTE021", e, &options.input));
+            return invalid_route(diagnostics, loaded.source);
+        }
+    };
     let mut command = Command::new(&python);
     command.arg(&router).arg(&input_board).arg(&routed_board);
     if !selected_nets.is_empty() {
@@ -578,14 +579,14 @@ pub fn route(options: &RouteOptions) -> RouteOutcome {
     let router_stdout = String::from_utf8_lossy(&result.stdout);
     diagnostics.extend(router_summary_diagnostics(&router_stdout, &options.input));
 
-    let routed_state = kiutils_kicad::PcbFile::read(&routed_board).map(|d| {
-        d.ast()
-            .footprints
-            .iter()
-            .map(|f| (f.reference.clone(), f.at, f.rotation, f.layer.clone()))
-            .collect::<Vec<_>>()
-    });
-    if footprint_state.ok() != routed_state.ok() {
+    let routed_state = match footprint_state(&routed_board) {
+        Ok(state) => state,
+        Err(e) => {
+            diagnostics.push(Diagnostic::error("ROUTE021", e, &options.input));
+            return invalid_route(diagnostics, loaded.source);
+        }
+    };
+    if initial_footprints != routed_state {
         diagnostics.push(Diagnostic::error(
             "ROUTE019",
             "router changed footprint placement; placement changes require source edits",
@@ -619,6 +620,7 @@ pub fn route(options: &RouteOptions) -> RouteOutcome {
         diagnostics.push(Diagnostic::error("ROUTE020", e, &options.input));
         return invalid_route(diagnostics, loaded.source);
     }
+    crate::routing::normalize_cache_order(&mut cache, &routing_input);
     let mut normalized = routing_input.clone();
     normalized.pcb.routes = cache.routes.clone();
     normalized.pcb.vias = cache.vias.clone();
@@ -627,8 +629,8 @@ pub fn route(options: &RouteOptions) -> RouteOutcome {
         diagnostics.extend(normalized_diagnostics);
         return invalid_route(diagnostics, loaded.source);
     }
-    if let Err(e) =
-        generate(&normalized, &libraries).write_to(staging.path(), &normalized.project.name)
+    if let Err(e) = generate(&normalized, &libraries)
+        .and_then(|g| g.write_to(staging.path(), &normalized.project.name))
     {
         diagnostics.push(Diagnostic::error("GEN001", e.to_string(), &options.input));
         return invalid_route(diagnostics, loaded.source);
@@ -788,8 +790,9 @@ fn run(options: &BuildOptions, publish: bool) -> BuildOutcome {
             return invalid(diagnostics, loaded.source);
         }
     };
-    let generated = generate(&project, &libraries);
-    if let Err(err) = generated.write_to(staging.path(), &project.project.name) {
+    if let Err(err) = generate(&project, &libraries)
+        .and_then(|g| g.write_to(staging.path(), &project.project.name))
+    {
         diagnostics.push(Diagnostic::error(
             "GEN001",
             format!("cannot write staged project: {err}"),
@@ -1255,7 +1258,7 @@ fn allow_parameter_values(schema: &mut Value) {
                     .is_some_and(|t| matches!(t, "number" | "integer" | "boolean"))
             {
                 let original = std::mem::take(schema);
-                *schema = json!({"anyOf":[original,{"type":"string","pattern":"^\\$\\{[A-Za-z0-9_-]+\\}$"}]});
+                *schema = json!({"anyOf":[original,{"type":"string","pattern":"^\\$\\{[\\s\\S]*\\}(?![\\s\\S])"}]});
             }
         }
         Value::Array(items) => {
@@ -1283,6 +1286,29 @@ fn schema_with_id(mut schema: Value, id: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn placement_state_rejects_bad_boards_and_ignores_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let board = dir.path().join("board.kicad_pcb");
+        assert!(footprint_state(&board).is_err());
+        fs::write(&board, "(kicad_pcb").unwrap();
+        assert!(footprint_state(&board).is_err());
+        let a = r#"(footprint "R" (layer "F.Cu") (at 1 2 90) (property "Reference" "R1"))"#;
+        let b = r#"(footprint "R" (layer "B.Cu") (at 3 4 0) (property "Reference" "R2"))"#;
+        fs::write(&board, format!("(kicad_pcb {a} {b})")).unwrap();
+        let first = footprint_state(&board).unwrap();
+        assert_eq!(first.len(), 2);
+        fs::write(&board, format!("(kicad_pcb {b} {a})")).unwrap();
+        assert_eq!(first, footprint_state(&board).unwrap());
+        fs::write(&board, format!("(kicad_pcb {a} {a})")).unwrap();
+        assert!(footprint_state(&board).unwrap_err().contains("duplicate"));
+        let hole = r#"(footprint "MountingHole" (uuid "hole-1") (layer "F.Cu") (at 5 6) (property "Reference" ""))"#;
+        fs::write(&board, format!("(kicad_pcb {a} {hole})")).unwrap();
+        let first = footprint_state(&board).unwrap();
+        fs::write(&board, format!("(kicad_pcb {hole} {a})")).unwrap();
+        assert_eq!(first, footprint_state(&board).unwrap());
+    }
 
     #[test]
     fn missing_or_malformed_reports_are_structural_errors() {
@@ -1406,4 +1432,57 @@ mod tests {
             );
         }
     }
+}
+
+/// Read placements by reference (or UUID for mechanical footprints), independent of file order.
+#[derive(Debug, PartialEq)]
+struct FootprintPlacement {
+    at: Option<[f64; 2]>,
+    rotation: Option<f64>,
+    layer: Option<String>,
+}
+fn footprint_state(
+    path: &Path,
+) -> Result<std::collections::BTreeMap<String, FootprintPlacement>, String> {
+    let document = kiutils_kicad::PcbFile::read(path)
+        .map_err(|e| format!("cannot parse board '{}': {e}", path.display()))?;
+    let mut state = std::collections::BTreeMap::new();
+    for footprint in &document.ast().footprints {
+        // Mechanical footprints have no printed reference; their UUID remains stable.
+        let reference = footprint
+            .reference
+            .as_deref()
+            .filter(|r| !r.is_empty())
+            .map(|r| format!("reference:{r}"))
+            .or_else(|| {
+                footprint
+                    .uuid
+                    .as_deref()
+                    .filter(|u| !u.is_empty())
+                    .map(|u| format!("uuid:{u}"))
+            })
+            .ok_or_else(|| {
+                format!(
+                    "board '{}' has a footprint without a reference or UUID",
+                    path.display()
+                )
+            })?;
+        if state
+            .insert(
+                reference.clone(),
+                FootprintPlacement {
+                    at: footprint.at,
+                    rotation: footprint.rotation,
+                    layer: footprint.layer.clone(),
+                },
+            )
+            .is_some()
+        {
+            return Err(format!(
+                "board '{}' has duplicate footprint reference '{reference}'",
+                path.display()
+            ));
+        }
+    }
+    Ok(state)
 }

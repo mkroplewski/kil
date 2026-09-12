@@ -54,7 +54,7 @@ Before the first compiler run, verify the common structural requirements togethe
 
 Fix all independent diagnostics from a compiler run in one edit. Do not rerun `schema`, broad `inspect`, or unchanged library queries unless a diagnostic makes them relevant.
 
-Before the first build, run `kil lock FILE` to record the resolved library contents. Rerun it only to explicitly accept a reviewed library change. After editing, run:
+Before the first build, run `kil lock FILE` to record the resolved library contents. Rerun it only to explicitly accept a reviewed library change. After editing an autorouted project, run `kil route FILE` before `kil check` whenever the cache is missing or stale. For a stale cache, reroute all nets (omit `--nets`). Then run `kil check` and `kil build`. For other edits, run:
 
 ```console
 kil check path/to/project.kil.json

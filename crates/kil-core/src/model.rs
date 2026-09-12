@@ -339,3 +339,12 @@ impl Rules {
             .map_or(self.preferred_track_width, |c| c.preferred_track_width)
     }
 }
+
+/// Names embedded in KiCad rule expressions use a restricted identifier alphabet.
+pub(crate) fn valid_net_class_name(name: &str) -> bool {
+    !name.is_empty()
+        && name != "Default"
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}

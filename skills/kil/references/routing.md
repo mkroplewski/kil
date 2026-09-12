@@ -17,7 +17,7 @@ The root `build.routing` profile selects the router independently of PCB intent.
 }
 ```
 
-Run `kil lock FILE` once to accept resolved library contents. For an existing project, run `kil check` before routing and fix structural errors first. For a new project that already declares routing but has no cache, run `kil route` directly after the preflight in `SKILL.md`; a preceding check would only report the expected missing cache. The route command validates before invoking the router.
+Run `kil lock FILE` once to accept resolved library contents. For an existing project with a current cache, run `kil check` before routing and fix structural errors first. If its cache is missing or stale, run `kil route FILE` first after the structural preflight; omit net selection to reroute all nets when the cache is stale. Then run `kil check` and `kil build`. For a new project that already declares routing but has no cache, run `kil route` directly after the preflight in `SKILL.md`; a preceding check would only report the expected missing cache. The route command validates before invoking the router.
 
 After a router run, group related placement or rule fixes into one edit before trying again. Do not repeat unchanged schema, library, or whole-project inspection commands. ERC or existing DRC findings may remain if they do not prevent the requested routing work, but record them so new violations are distinguishable.
 

@@ -113,6 +113,12 @@ fn routes_two_groups_preserves_copper_and_builds_cache() {
         first["routes"]["SIGNAL"], second["routes"]["SIGNAL"],
         "untouched copper or lock flags changed"
     );
+    assert!(
+        second["routes"]["GND"]
+            .as_array()
+            .is_some_and(|routes| !routes.is_empty()),
+        "second run produced no copper for GND: {second}"
+    );
     let build = kil_core::build(&BuildOptions {
         input: input.clone(),
         output: Some(dir.path().join("output")),

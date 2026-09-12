@@ -510,6 +510,19 @@ pub fn selected(patterns: &[String], net: &str) -> bool {
         )
     })
 }
+/// Restore the same net and via ordering used when extracting a route cache.
+pub(crate) fn normalize_cache_order(cache: &mut RouteCache, project: &ResolvedProject) {
+    cache.routes.sort_by(|a, _, b, _| {
+        project
+            .nets
+            .get_index_of(a)
+            .unwrap_or(usize::MAX)
+            .cmp(&project.nets.get_index_of(b).unwrap_or(usize::MAX))
+            .then_with(|| a.cmp(b))
+    });
+    cache.vias.sort_by_key(via_sort_key);
+}
+
 /// Restore untouched nets and reject changes to locked copper before publication.
 pub fn preserve_copper(
     before: &RouteCache,
@@ -524,7 +537,7 @@ pub fn preserve_copper(
         for route in routes.iter().filter(|r| r.locked) {
             if !after.routes.get(net).is_some_and(|rs| {
                 rs.iter()
-                    .any(|r| route_sort_key(r) == route_sort_key(route))
+                    .any(|r| r.locked && route_sort_key(r) == route_sort_key(route))
             }) {
                 return Err(format!("router changed locked copper on '{net}'"));
             }
@@ -549,7 +562,7 @@ pub fn preserve_copper(
         if !after
             .vias
             .iter()
-            .any(|v| via_sort_key(v) == via_sort_key(via))
+            .any(|v| v.locked && via_sort_key(v) == via_sort_key(via))
         {
             return Err(format!("router changed a locked via on '{}'", via.net));
         }
@@ -577,13 +590,44 @@ mod tests {
         };
         let mut after = before.clone();
         after.routes.shift_remove("GND");
+        after.vias.reverse();
         preserve_copper(&before, &mut after, &["SIGNAL".into()]).unwrap();
+        normalize_cache_order(&mut after, &project);
+        let expected: Vec<_> = project
+            .nets
+            .keys()
+            .filter(|n| after.routes.contains_key(*n))
+            .collect();
+        assert_eq!(after.routes.keys().collect::<Vec<_>>(), expected);
+        assert!(
+            after
+                .vias
+                .windows(2)
+                .all(|v| via_sort_key(&v[0]) <= via_sort_key(&v[1]))
+        );
         assert_eq!(
             serde_json::to_value(&before.routes["GND"]).unwrap(),
             serde_json::to_value(&after.routes["GND"]).unwrap()
         );
         let mut before = before;
         before.routes["SIGNAL"][0].locked = true;
+        after = before.clone();
+        after.routes["SIGNAL"][0].locked = false;
+        assert!(preserve_copper(&before, &mut after, &["SIGNAL".into()]).is_err());
+        after = before.clone();
+        preserve_copper(&before, &mut after, &["SIGNAL".into()]).unwrap();
+        before.vias.push(crate::model::Via {
+            net: "SIGNAL".into(),
+            at: [1., 2.],
+            size: None,
+            drill: None,
+            locked: true,
+        });
+        after = before.clone();
+        after.vias.last_mut().unwrap().locked = false;
+        assert!(preserve_copper(&before, &mut after, &["SIGNAL".into()]).is_err());
+        after = before.clone();
+        preserve_copper(&before, &mut after, &["SIGNAL".into()]).unwrap();
         after.routes["SIGNAL"].clear();
         assert!(preserve_copper(&before, &mut after, &["SIGNAL".into()]).is_err());
         assert!(selected(&["/SIG*".into()], "SIGNAL"));
