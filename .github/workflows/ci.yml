@@ -38,3 +38,39 @@ jobs:
           cargo +1.90.0 run --quiet -p kil -- schema --module > /tmp/kil-module-v2.schema.json
           python3 -c 'import json; assert json.load(open("schemas/kil-v2.schema.json")) == json.load(open("/tmp/kil-v2.schema.json"))'
           python3 -c 'import json; assert json.load(open("schemas/kil-module-v2.schema.json")) == json.load(open("/tmp/kil-module-v2.schema.json"))'
+
+  kicad-integration:
+    name: KiCad 10 and routing integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      KIL_KICAD_CLI: /usr/bin/kicad-cli
+      KIL_KRT: ${{ github.workspace }}/target/krt-integration
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.90
+        run: rustup toolchain install 1.90.0 --profile minimal
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install KiCad 10 and standard libraries
+        run: |
+          sudo add-apt-repository --yes ppa:kicad/kicad-10.0-releases
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends kicad kicad-symbols kicad-footprints
+          kicad-cli version | tee /tmp/kicad-version.txt
+          grep -Eq '^10\.' /tmp/kicad-version.txt
+
+      - name: Install pinned KiCadRoutingTools
+        run: |
+          krt_version="$(tr -d '\r\n' < KRT_VERSION)"
+          git clone --depth 1 --branch "$krt_version" https://github.com/drandyhaas/KiCadRoutingTools.git "$KIL_KRT"
+          python -m pip install --disable-pip-version-check numpy scipy shapely
+          python "$KIL_KRT/build_router.py" --tag "$krt_version"
+          echo "KIL_PYTHON=$(command -v python)" >> "$GITHUB_ENV"
+
+      - name: Run real KiCad and routing tests
+        run: cargo +1.90.0 test --locked -p kil-core --test kicad_integration -- --ignored --nocapture

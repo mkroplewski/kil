@@ -112,7 +112,7 @@ Connectivity comes only from `circuit.nets` and `circuit.unconnected`. KIL compa
 
 ## Explicit integration tests
 
-The ordinary suite uses checked-in library fixtures. Three additional tests require local tools and appear as ignored in ordinary test output:
+The ordinary suite uses checked-in library fixtures. Three additional tests require KiCad 10 and KiCadRoutingTools. They appear as ignored in ordinary test output, and the dedicated Ubuntu CI job installs the tools and runs them on every pull request and push to `main`. CI uses the KiCad 10 release PPA and the router tag in `KRT_VERSION`. To run them locally:
 
 ```sh
 KIL_KICAD_CLI=/path/to/kicad-cli KIL_KRT=/path/to/KiCadRoutingTools \
