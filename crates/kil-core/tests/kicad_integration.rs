@@ -1,0 +1,181 @@
+//! Explicit integration gates: ignored by ordinary CI, never silently successful.
+use kil_core::{BuildOptions, ExitClass, RouteOptions};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+fn cli() -> PathBuf {
+    std::env::var_os("KIL_KICAD_CLI")
+        .map(PathBuf::from)
+        .expect("set KIL_KICAD_CLI to KiCad 10's executable")
+}
+fn lock(path: &Path) {
+    let loaded = kil_core::load_project(path);
+    let project = loaded.project.unwrap();
+    let (libraries, diagnostics) =
+        kil_core::library::LibraryResolver::discover(path.parent().unwrap(), Some(&cli()))
+            .resolve_all(&project, path, &loaded.source);
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    kil_core::lock::write(path, &libraries).unwrap();
+}
+#[test]
+#[ignore = "requires KiCad 10; set KIL_KICAD_CLI and run --ignored"]
+fn checks_repeated_modules_and_detects_schematic_short() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("project.kil.json");
+    let mut root: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../examples/modular-resistors/project.kil.json"
+    ))
+    .unwrap();
+    root["circuit"]["instances"]["divider"]["source"] = serde_json::json!("module.json");
+    let mut other = root["circuit"]["instances"]["divider"].clone();
+    other["pcb"]["at"] = serde_json::json!([18, 5]);
+    other["schematic"]["at"] = serde_json::json!([100.33, 50.8]);
+    root["circuit"]["instances"]["other"] = other;
+    root["pcb"]["outline"] = serde_json::json!([[0, 0], [30, 0], [30, 14], [0, 14]]);
+    fs::write(
+        dir.path().join("module.json"),
+        include_str!("../../../examples/modular-resistors/blocks/divider.kil.json"),
+    )
+    .unwrap();
+    fs::write(&input, root.to_string()).unwrap();
+    lock(&input);
+    let options = BuildOptions {
+        input: input.clone(),
+        output: Some(dir.path().join("output")),
+        kicad_cli: Some(cli()),
+    };
+    let result = kil_core::build(&options);
+    assert_ne!(result.exit, ExitClass::Invalid, "{:?}", result.diagnostics);
+    for rotation in [0, 90, 180, 270] {
+        let mut simple: serde_json::Value =
+            serde_json::from_str(include_str!("../../../examples/two-resistors.kil.json")).unwrap();
+        for symbol in simple["schematic"]["symbols"]
+            .as_object_mut()
+            .unwrap()
+            .values_mut()
+        {
+            symbol["rotation"] = serde_json::json!(rotation);
+        }
+        fs::write(&input, simple.to_string()).unwrap();
+        lock(&input);
+        let result = kil_core::check(&options);
+        assert_ne!(
+            result.exit,
+            ExitClass::Invalid,
+            "rotation {rotation}: {:?}",
+            result.diagnostics
+        );
+    }
+    let mut simple: serde_json::Value =
+        serde_json::from_str(include_str!("../../../examples/two-resistors.kil.json")).unwrap();
+    simple["schematic"]["wires"] =
+        serde_json::json!([{"net":"SIGNAL","path":[[50.8,46.99],[50.8,54.61]]}]);
+    fs::write(&input, simple.to_string()).unwrap();
+    lock(&input);
+    let result = kil_core::check(&options);
+    assert_eq!(result.exit, ExitClass::Invalid);
+    assert!(result.diagnostics.iter().any(|d| d.code == "KICAD006"));
+}
+#[test]
+#[ignore = "requires KiCad 10 and KiCadRoutingTools; set KIL_KICAD_CLI and KIL_KRT"]
+fn routes_two_groups_preserves_copper_and_builds_cache() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("project.kil.json");
+    fs::write(
+        &input,
+        include_str!("../../../examples/routed-divider.kil.json"),
+    )
+    .unwrap();
+    lock(&input);
+    let mut options = RouteOptions {
+        input: input.clone(),
+        kicad_cli: Some(cli()),
+        krt: Some(
+            std::env::var_os("KIL_KRT")
+                .map(PathBuf::from)
+                .expect("set KIL_KRT"),
+        ),
+        python: std::env::var_os("KIL_PYTHON").map(PathBuf::from),
+        nets: vec!["SIGNAL".into()],
+        block: None,
+    };
+    let a = kil_core::route(&options);
+    assert_ne!(a.exit, ExitClass::Invalid, "{:?}", a.diagnostics);
+    let first: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(a.cache_file.unwrap()).unwrap()).unwrap();
+    options.nets = vec!["GND".into()];
+    let b = kil_core::route(&options);
+    assert_eq!(b.exit, ExitClass::Success, "{:?}", b.diagnostics);
+    let second: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(b.cache_file.unwrap()).unwrap()).unwrap();
+    assert_eq!(
+        first["routes"]["SIGNAL"], second["routes"]["SIGNAL"],
+        "untouched copper or lock flags changed"
+    );
+    assert!(
+        second["routes"]["GND"]
+            .as_array()
+            .is_some_and(|routes| !routes.is_empty()),
+        "second run produced no copper for GND: {second}"
+    );
+    let build = kil_core::build(&BuildOptions {
+        input: input.clone(),
+        output: Some(dir.path().join("output")),
+        kicad_cli: Some(cli()),
+    });
+    assert_eq!(build.exit, ExitClass::Success, "{:?}", build.diagnostics);
+    let output = build.output_dir.unwrap();
+    assert!(output.join("routed-divider.kicad_dru").is_file());
+    let mut changed: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&input).unwrap()).unwrap();
+    changed["pcb"]["placement"]["R1"]["at"] = serde_json::json!([6, 5]);
+    fs::write(&input, changed.to_string()).unwrap();
+    let check = kil_core::check(&BuildOptions {
+        input,
+        output: None,
+        kicad_cli: Some(cli()),
+    });
+    assert!(
+        check.diagnostics.iter().any(|d| d.code == "ROUTE006"),
+        "{:?}",
+        check.diagnostics
+    );
+}
+
+#[test]
+#[ignore = "requires KiCad 10; set KIL_KICAD_CLI"]
+fn pad_anchors_match_back_side_rotated_footprints() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("back.kil.json");
+    let mut source: serde_json::Value =
+        serde_json::from_str(include_str!("../../../examples/anchored-divider.kil.json")).unwrap();
+    for p in source["pcb"]["placement"]
+        .as_object_mut()
+        .unwrap()
+        .values_mut()
+    {
+        p["side"] = serde_json::json!("back");
+        p["rotation"] = serde_json::json!(90);
+    }
+    source["pcb"]["placement"]["R2"]["at"] = serde_json::json!([9, 5]);
+    for routes in source["pcb"]["routes"]
+        .as_object_mut()
+        .unwrap()
+        .values_mut()
+    {
+        for r in routes.as_array_mut().unwrap() {
+            r["layer"] = serde_json::json!("B.Cu");
+        }
+    }
+    source["pcb"]["vias"] = serde_json::json!([]);
+    source["pcb"]["zones"] = serde_json::json!([]);
+    fs::write(&input, source.to_string()).unwrap();
+    lock(&input);
+    let result = kil_core::check(&BuildOptions {
+        input,
+        output: None,
+        kicad_cli: Some(cli()),
+    });
+    assert_eq!(result.exit, ExitClass::Success, "{:?}", result.diagnostics);
+}

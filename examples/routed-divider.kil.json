@@ -2,8 +2,8 @@
   "$schema": "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-v2.schema.json",
   "format_version": 2,
   "project": {
-    "name": "two-resistors",
-    "title": "KiCad IL v1 smoke test",
+    "name": "routed-divider",
+    "title": "KiCad IL v2 smoke test",
     "kicad": 10
   },
   "pcb": {
@@ -41,60 +41,8 @@
         "mode": "fixed"
       }
     },
-    "routes": {
-      "SIGNAL": [
-        {
-          "layer": "F.Cu",
-          "path": [
-            [
-              4.175,
-              5
-            ],
-            [
-              4.175,
-              9
-            ]
-          ]
-        }
-      ],
-      "GND": [
-        {
-          "layer": "F.Cu",
-          "path": [
-            [
-              5.825,
-              5
-            ],
-            [
-              5.825,
-              7
-            ]
-          ]
-        },
-        {
-          "layer": "F.Cu",
-          "path": [
-            [
-              5.825,
-              7
-            ],
-            [
-              5.825,
-              9
-            ]
-          ]
-        }
-      ]
-    },
-    "vias": [
-      {
-        "net": "GND",
-        "at": [
-          5.825,
-          7
-        ]
-      }
-    ],
+    "routes": {},
+    "vias": [],
     "zones": [
       {
         "net": "GND",
@@ -130,7 +78,7 @@
     ],
     "silk": [
       {
-        "text": "KIL v1",
+        "text": "KIL v2",
         "at": [
           9,
           2
@@ -184,6 +132,32 @@
         ],
         "part": "R2",
         "unit": 1
+      }
+    }
+  },
+  "build": {
+    "routing": {
+      "engine": "kicad-routing-tools",
+      "nets": [
+        "*"
+      ]
+    }
+  },
+  "rules": {
+    "minimum_track_width": 0.15,
+    "preferred_track_width": 0.25,
+    "net_classes": {
+      "signal": {
+        "nets": [
+          "SIGNAL"
+        ],
+        "clearance": 0.2,
+        "minimum_track_width": 0.2,
+        "preferred_track_width": 0.3,
+        "allowed_layers": [
+          "F.Cu",
+          "B.Cu"
+        ]
       }
     }
   }

@@ -1,5 +1,5 @@
 use crate::library::{ResolvedComponent, ResolvedLibraries, ResolvedPin};
-use crate::model::{BoardSide, KilProject, Point};
+use crate::model::{BoardSide, Point, ResolvedProject};
 use crate::validate::parse_endpoint;
 use indexmap::IndexMap;
 use kiutils_kicad::{PcbFile, SchematicFile};
@@ -14,6 +14,7 @@ const ZERO: Span = Span { start: 0, end: 0 };
 
 #[derive(Debug, Clone)]
 pub struct GeneratedProject {
+    pub design_rules: String,
     pub project: String,
     pub schematic: String,
     pub pcb: String,
@@ -25,6 +26,10 @@ impl GeneratedProject {
         let project_path = directory.join(format!("{name}.kicad_pro"));
         let schematic_path = directory.join(format!("{name}.kicad_sch"));
         let pcb_path = directory.join(format!("{name}.kicad_pcb"));
+        fs::write(
+            directory.join(format!("{name}.kicad_dru")),
+            &self.design_rules,
+        )?;
         fs::write(&project_path, &self.project)?;
         fs::write(&schematic_path, &self.schematic)?;
         fs::write(&pcb_path, &self.pcb)?;
@@ -32,7 +37,19 @@ impl GeneratedProject {
     }
 }
 
-pub fn generate(project: &KilProject, libraries: &ResolvedLibraries) -> GeneratedProject {
+/// Generate KiCad artifacts, rejecting names that cannot safely appear in rule expressions.
+pub fn generate(
+    project: &ResolvedProject,
+    libraries: &ResolvedLibraries,
+) -> std::io::Result<GeneratedProject> {
+    for name in project.rules.net_classes.keys() {
+        if !crate::model::valid_net_class_name(name) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("invalid net-class name '{name}'"),
+            ));
+        }
+    }
     let schematic_node = schematic_node(project, libraries);
     let pcb_node = pcb_node(project, libraries);
     let schematic = CstDocument {
@@ -46,11 +63,12 @@ pub fn generate(project: &KilProject, libraries: &ResolvedLibraries) -> Generate
     }
     .to_canonical_string();
     let project_json = project_json(project);
-    GeneratedProject {
+    Ok(GeneratedProject {
+        design_rules: design_rules(project),
         project: project_json,
         schematic,
         pcb,
-    }
+    })
 }
 
 pub fn validate_generated(directory: &Path, name: &str) -> Result<(), String> {
@@ -68,7 +86,7 @@ pub fn validate_generated(directory: &Path, name: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn schematic_node(project: &KilProject, libraries: &ResolvedLibraries) -> Node {
+fn schematic_node(project: &ResolvedProject, libraries: &ResolvedLibraries) -> Node {
     let root_uuid = stable_uuid(project, "schematic/root");
     let mut root = vec![
         sym("kicad_sch"),
@@ -94,16 +112,18 @@ fn schematic_node(project: &KilProject, libraries: &ResolvedLibraries) -> Node {
     embedded.extend(seen.into_values());
     root.push(list(embedded));
 
-    for (index, (reference, component)) in project.components.iter().enumerate() {
+    for (index, (view_id, placement)) in project.schematic.placement.iter().enumerate() {
+        let reference = &placement.part;
+        let Some(component) = project.components.get(reference) else {
+            continue;
+        };
         let Some(resolved) = libraries.components.get(reference) else {
             continue;
         };
-        let Some(placement) = project.schematic.placement.get(reference) else {
-            continue;
-        };
-        let instance_uuid = stable_uuid(project, &format!("schematic/component/{reference}"));
+
+        let instance_uuid = stable_uuid(project, &format!("schematic/component/{view_id}"));
         let value = if component.value.is_empty() {
-            reference.as_str()
+            component.reference.as_str()
         } else {
             component.value.as_str()
         };
@@ -111,7 +131,7 @@ fn schematic_node(project: &KilProject, libraries: &ResolvedLibraries) -> Node {
             sym("symbol"),
             list(vec![sym("lib_id"), quoted(&component.symbol)]),
             at3(placement.at[0], placement.at[1], placement.rotation),
-            list(vec![sym("unit"), sym("1")]),
+            list(vec![sym("unit"), sym(placement.unit.to_string())]),
             list(vec![sym("exclude_from_sim"), sym("no")]),
             list(vec![sym("in_bom"), sym("yes")]),
             list(vec![sym("on_board"), sym("yes")]),
@@ -121,7 +141,7 @@ fn schematic_node(project: &KilProject, libraries: &ResolvedLibraries) -> Node {
                 project,
                 reference,
                 "Reference",
-                reference,
+                &component.reference,
                 placement.at,
                 index,
                 false,
@@ -170,7 +190,10 @@ fn schematic_node(project: &KilProject, libraries: &ResolvedLibraries) -> Node {
                 ));
             }
         }
-        for pin in unique_pins(&resolved.pins) {
+        for pin in unique_pins(&resolved.pins)
+            .into_iter()
+            .filter(|p| p.unit == 0 || p.unit == placement.unit)
+        {
             items.push(list(vec![
                 sym("pin"),
                 quoted(&pin.number),
@@ -179,7 +202,7 @@ fn schematic_node(project: &KilProject, libraries: &ResolvedLibraries) -> Node {
                     quoted(
                         stable_uuid(
                             project,
-                            &format!("schematic/component/{reference}/pin/{}", pin.number),
+                            &format!("schematic/component/{view_id}/pin/{}", pin.number),
                         )
                         .to_string(),
                     ),
@@ -194,8 +217,8 @@ fn schematic_node(project: &KilProject, libraries: &ResolvedLibraries) -> Node {
                 list(vec![
                     sym("path"),
                     quoted(format!("/{root_uuid}")),
-                    list(vec![sym("reference"), quoted(reference)]),
-                    list(vec![sym("unit"), sym("1")]),
+                    list(vec![sym("reference"), quoted(&component.reference)]),
+                    list(vec![sym("unit"), sym(placement.unit.to_string())]),
                 ]),
             ]),
         ]));
@@ -273,7 +296,7 @@ fn schematic_node(project: &KilProject, libraries: &ResolvedLibraries) -> Node {
     list(root)
 }
 
-fn pcb_node(project: &KilProject, libraries: &ResolvedLibraries) -> Node {
+fn pcb_node(project: &ResolvedProject, libraries: &ResolvedLibraries) -> Node {
     let mut root = vec![
         sym("kicad_pcb"),
         list(vec![sym("version"), sym("20250114")]),
@@ -360,7 +383,7 @@ fn pcb_node(project: &KilProject, libraries: &ResolvedLibraries) -> Node {
                     point_list("end", frame.map(segment[1])),
                     list(vec![
                         sym("width"),
-                        num(route.width.unwrap_or(project.rules.track_width)),
+                        num(route.width.unwrap_or(project.rules.width(net))),
                     ]),
                     list(vec![sym("layer"), quoted(&route.layer)]),
                     list(vec![sym("net"), sym(code.to_string())]),
@@ -525,7 +548,7 @@ fn pcb_node(project: &KilProject, libraries: &ResolvedLibraries) -> Node {
 }
 
 fn placed_footprint(
-    project: &KilProject,
+    project: &ResolvedProject,
     reference: &str,
     value: &str,
     resolved: &ResolvedComponent,
@@ -573,11 +596,15 @@ fn placed_footprint(
     );
     let at = frame.map(placement.at);
     upsert_child(items, at3(at[0], at[1], -placement.rotation));
-    set_property(items, "Reference", reference);
+    set_property(items, "Reference", &project.components[reference].reference);
     set_property(
         items,
         "Value",
-        if value.is_empty() { reference } else { value },
+        if value.is_empty() {
+            project.components[reference].reference.as_str()
+        } else {
+            value
+        },
     );
     ensure_footprint_property(items, "Datasheet", "");
     ensure_footprint_property(items, "Description", "");
@@ -612,29 +639,30 @@ fn placed_footprint(
                 ]),
             );
         }
-        if placement.side == BoardSide::Back {
+        if placement.side == BoardSide::Back && !matches!(node_head(child), Some("at" | "layer")) {
+            mirror_footprint_geometry(child);
             swap_front_back_layers(child);
         }
     }
     node
 }
 
-fn project_json(project: &KilProject) -> String {
+fn project_json(project: &ResolvedProject) -> String {
     let rules = &project.rules;
-    serde_json::to_string_pretty(&json!({
+    let mut output = json!({
         "board": {
             "design_settings": {
-                "defaults": { "board_outline_line_width": 0.05, "copper_line_width": rules.track_width },
+                "defaults": { "board_outline_line_width": 0.05, "copper_line_width": rules.preferred_track_width },
                 "drc_exclusions": [],
                 "meta": { "version": 2 },
                 "rules": {
                     "allow_blind_buried_vias": false,
                     "allow_microvias": false,
                     "min_clearance": rules.clearance,
-                    "min_track_width": rules.track_width,
+                    "min_track_width": rules.minimum_track_width,
                     "min_via_diameter": rules.via_size
                 },
-                "track_widths": [0.0, rules.track_width],
+                "track_widths": [0.0, rules.preferred_track_width],
                 "via_dimensions": [{"diameter": 0.0, "drill": 0.0}, {"diameter": rules.via_size, "drill": rules.via_drill}]
             }
         },
@@ -646,11 +674,11 @@ fn project_json(project: &KilProject) -> String {
         "net_settings": {
             "classes": [{
                 "bus_width": 12, "clearance": rules.clearance, "diff_pair_gap": 0.25,
-                "diff_pair_via_gap": 0.25, "diff_pair_width": rules.track_width,
+                "diff_pair_via_gap": 0.25, "diff_pair_width": rules.preferred_track_width,
                 "line_style": 0, "microvia_diameter": 0.3, "microvia_drill": 0.1,
                 "name": "Default", "pcb_color": "rgba(0, 0, 0, 0.000)",
                 "priority": 2147483647, "schematic_color": "rgba(0, 0, 0, 0.000)",
-                "track_width": rules.track_width, "via_diameter": rules.via_size,
+                "track_width": rules.preferred_track_width, "via_diameter": rules.via_size,
                 "via_drill": rules.via_drill, "wire_width": 6
             }],
             "meta": { "version": 4 }, "net_colors": null,
@@ -660,23 +688,62 @@ fn project_json(project: &KilProject) -> String {
         "schematic": { "meta": { "version": 1 } },
         "sheets": [[stable_uuid(project, "schematic/root").to_string(), "Root"]],
         "text_variables": {}
-    })).expect("JSON serialization cannot fail") + "\n"
+    });
+    for (name, class) in &rules.net_classes {
+        let mut value = output["net_settings"]["classes"][0].clone();
+        value["name"] = json!(name);
+        value["clearance"] = json!(class.clearance);
+        value["track_width"] = json!(class.preferred_track_width);
+        output["net_settings"]["classes"]
+            .as_array_mut()
+            .unwrap()
+            .push(value);
+    }
+    let assignments: serde_json::Map<String, serde_json::Value> = rules
+        .net_classes
+        .iter()
+        .flat_map(|(name, class)| {
+            class
+                .nets
+                .iter()
+                .map(move |net| (schematic_net_name(net), json!([name])))
+        })
+        .collect();
+    output["net_settings"]["netclass_assignments"] = json!(assignments);
+    serde_json::to_string_pretty(&output).expect("JSON serialization cannot fail") + "\n"
+}
+
+fn design_rules(project: &ResolvedProject) -> String {
+    let mut out = String::from("(version 1)\n");
+    for (name, class) in &project.rules.net_classes {
+        out.push_str(&format!("(rule \"{name}-width\" (condition \"A.NetClass == '{name}'\") (constraint track_width (min {})))\n",class.minimum_track_width));
+        for layer in ["F.Cu", "B.Cu"] {
+            if !class.allowed_layers.iter().any(|l| l == layer) {
+                out.push_str(&format!("(rule \"{name}-{layer}\" (condition \"A.NetClass == '{name}'\") (layer \"{layer}\") (constraint disallow track via zone))\n"));
+            }
+        }
+    }
+    out
 }
 
 fn endpoint_position(
-    project: &KilProject,
+    project: &ResolvedProject,
     libraries: &ResolvedLibraries,
     endpoint: &str,
 ) -> Option<Point> {
     let (reference, query) = parse_endpoint(endpoint)?;
-    let placement = project.schematic.placement.get(reference)?;
     let resolved = libraries.components.get(reference)?;
     let pin = resolved
         .pins
         .iter()
         .find(|pin| pin.number == query || pin.name.as_deref() == Some(query))?;
+    let placement = project
+        .schematic
+        .placement
+        .values()
+        .find(|p| p.part == reference && (pin.unit == 0 || p.unit == pin.unit))?;
     let local = [pin.at[0], -pin.at[1]];
-    let angle = placement.rotation.to_radians();
+    let angle = (-placement.rotation).to_radians();
     let rotated = [
         angle.cos() * local[0] - angle.sin() * local[1],
         angle.sin() * local[0] + angle.cos() * local[1],
@@ -684,7 +751,7 @@ fn endpoint_position(
     Some([placement.at[0] + rotated[0], placement.at[1] + rotated[1]])
 }
 
-fn endpoint_net_map(project: &KilProject) -> BTreeMap<String, &str> {
+fn endpoint_net_map(project: &ResolvedProject) -> BTreeMap<String, &str> {
     let mut map = BTreeMap::new();
     for (net, endpoints) in &project.nets {
         for endpoint in endpoints {
@@ -711,7 +778,7 @@ fn unique_pins(pins: &[ResolvedPin]) -> Vec<&ResolvedPin> {
 }
 
 fn property_node(
-    project: &KilProject,
+    project: &ResolvedProject,
     reference: &str,
     key: &str,
     value: &str,
@@ -730,7 +797,7 @@ fn property_node(
     list(items)
 }
 
-fn label_node(project: &KilProject, net: &str, at: Point, rotation: f64, key: &str) -> Node {
+fn label_node(project: &ResolvedProject, net: &str, at: Point, rotation: f64, key: &str) -> Node {
     list(vec![
         sym("label"),
         quoted(net),
@@ -830,7 +897,7 @@ fn pcb_layers() -> Node {
 }
 
 fn gr_line(
-    project: &KilProject,
+    project: &ResolvedProject,
     start: Point,
     end: Point,
     layer: &str,
@@ -870,14 +937,19 @@ impl BoardFrame {
     }
 }
 
-fn stable_uuid(project: &KilProject, key: &str) -> Uuid {
+fn stable_uuid(project: &ResolvedProject, key: &str) -> Uuid {
     Uuid::new_v5(
         &Uuid::NAMESPACE_URL,
         format!("kil:{}:{key}", project.project.name).as_bytes(),
     )
 }
 
-fn add_descendant_uuids(project: &KilProject, node: &mut Node, prefix: &str, ordinal: &mut usize) {
+fn add_descendant_uuids(
+    project: &ResolvedProject,
+    node: &mut Node,
+    prefix: &str,
+    ordinal: &mut usize,
+) {
     let eligible = matches!(
         node_head(node),
         Some(
@@ -926,6 +998,39 @@ fn is_named_property(node: &Node) -> bool {
                 ] if head == "property"
             )
     )
+}
+
+fn mirror_footprint_geometry(node: &mut Node) {
+    if let Node::List { items, .. } = node {
+        let head = items.first().and_then(|n| match n {
+            Node::Atom {
+                atom: Atom::Symbol(s),
+                ..
+            } => Some(s.as_str()),
+            _ => None,
+        });
+        if matches!(head, Some("at" | "xy" | "start" | "end" | "mid" | "center")) {
+            if let Some(Node::Atom {
+                atom: Atom::Symbol(x) | Atom::Quoted(x),
+                ..
+            }) = items.get_mut(1)
+                && let Ok(value) = x.parse::<f64>()
+            {
+                *x = (-value).to_string();
+            }
+            if let Some(Node::Atom {
+                atom: Atom::Symbol(angle) | Atom::Quoted(angle),
+                ..
+            }) = items.get_mut(3)
+                && let Ok(value) = angle.parse::<f64>()
+            {
+                *angle = (-value).to_string();
+            }
+        }
+        for child in items.iter_mut().skip(1) {
+            mirror_footprint_geometry(child);
+        }
+    }
 }
 
 fn swap_front_back_layers(node: &mut Node) {
@@ -993,7 +1098,7 @@ fn ensure_footprint_property(items: &mut Vec<Node>, key: &str, value: &str) {
 }
 
 fn footprint_property_node(
-    project: &KilProject,
+    project: &ResolvedProject,
     uuid_path: &str,
     key: &str,
     value: &str,
@@ -1112,15 +1217,57 @@ fn at3(x: f64, y: f64, rotation: f64) -> Node {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::library::LibraryResolver;
     use std::time::{Duration, Instant};
 
     #[test]
+    fn generation_rejects_unsafe_net_class_names() {
+        let (mut project, libraries) = fixture();
+        for name in ["sig\"fast", "sig'fast", "sig\\fast"] {
+            project.rules.net_classes.clear();
+            project.rules.net_classes.insert(
+                name.into(),
+                crate::model::NetClass {
+                    nets: vec![],
+                    clearance: 0.2,
+                    minimum_track_width: 0.2,
+                    preferred_track_width: 0.25,
+                    allowed_layers: vec!["F.Cu".into()],
+                },
+            );
+            assert_eq!(
+                generate(&project, &libraries).unwrap_err().kind(),
+                std::io::ErrorKind::InvalidInput
+            );
+        }
+    }
+
+    #[test]
+    fn back_side_geometry_is_mirrored_once_including_quoted_numbers() {
+        let mut pad = list(vec![
+            sym("pad"),
+            quoted("1"),
+            list(vec![sym("at"), quoted("2"), num(3.), quoted("90")]),
+            list(vec![sym("layers"), quoted("F.Cu"), quoted("F.Mask")]),
+        ]);
+        mirror_footprint_geometry(&mut pad);
+        swap_front_back_layers(&mut pad);
+        let expected = list(vec![
+            sym("pad"),
+            quoted("1"),
+            list(vec![sym("at"), quoted("-2"), num(3.), quoted("-90")]),
+            list(vec![sym("layers"), quoted("B.Cu"), quoted("B.Mask")]),
+        ]);
+        assert_eq!(pad, expected);
+    }
+
+    #[test]
     fn pad_property_markers_do_not_receive_uuids() {
-        let project: KilProject =
-            serde_json::from_str(include_str!("../../../examples/two-resistors.kil.json")).unwrap();
+        let project: ResolvedProject =
+            serde_json::from_str(include_str!("../testdata/resolved/two-resistors.kil.json"))
+                .unwrap();
         let mut marker = list(vec![sym("property"), sym("pad_prop_mechanical")]);
         let mut ordinal = 0;
 
@@ -1133,57 +1280,66 @@ mod tests {
         assert_eq!(ordinal, 0);
     }
 
+    pub(crate) fn fixture() -> (ResolvedProject, ResolvedLibraries) {
+        let project: ResolvedProject =
+            serde_json::from_str(include_str!("../testdata/resolved/two-resistors.kil.json"))
+                .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("test.kicad_sym"),
+            include_str!("../testdata/test.kicad_sym"),
+        )
+        .unwrap();
+        std::fs::create_dir(dir.path().join("test.pretty")).unwrap();
+        std::fs::write(
+            dir.path().join("test.pretty/R.kicad_mod"),
+            include_str!("../testdata/R.kicad_mod"),
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("sym-lib-table"), r#"(sym_lib_table (lib (name "Device") (type "KiCad") (uri "${KIPRJMOD}/test.kicad_sym") (options "") (descr "")))"#).unwrap();
+        std::fs::write(dir.path().join("fp-lib-table"), r#"(fp_lib_table (lib (name "Resistor_SMD") (type "KiCad") (uri "${KIPRJMOD}/test.pretty") (options "") (descr "")))"#).unwrap();
+        std::fs::copy(
+            dir.path().join("test.pretty/R.kicad_mod"),
+            dir.path().join("test.pretty/R_0603_1608Metric.kicad_mod"),
+        )
+        .unwrap();
+        let (libraries, diagnostics) = LibraryResolver::discover(dir.path(), None).resolve_all(
+            &project,
+            &dir.path().join("test.json"),
+            "",
+        );
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+        (project, libraries)
+    }
     #[test]
-    fn golden_files_are_deterministic_and_parse_internally() {
-        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let cli = PathBuf::from(r"C:\Program Files\KiCad\10.0\bin\kicad-cli.exe");
-        if !cli.is_file() {
-            return;
-        }
-        for fixture in ["rc-led", "tiny-controller"] {
-            let input = manifest.join(format!("../../examples/{fixture}.kil.json"));
-            let source = fs::read_to_string(&input).unwrap();
-            let project: KilProject = serde_json::from_str(&source).unwrap();
-            let resolver = LibraryResolver::discover(input.parent().unwrap(), Some(&cli));
-            let (libraries, diagnostics) = resolver.resolve_all(&project, &input, &source);
-            assert!(diagnostics.is_empty(), "{fixture}: {diagnostics:#?}");
-            let first = generate(&project, &libraries);
-            let second = generate(&project, &libraries);
-            assert_eq!(first.schematic, second.schematic, "{fixture}");
-            assert_eq!(first.pcb, second.pcb, "{fixture}");
-            let output = manifest.join(format!("../../target/kil-golden-{fixture}"));
-            if output.exists() {
-                fs::remove_dir_all(&output).unwrap();
-            }
-            first.write_to(&output, &project.project.name).unwrap();
-            validate_generated(&output, &project.project.name).unwrap();
-        }
-
-        let input = manifest.join("testdata/derived-symbols.kil.json");
-        let source = fs::read_to_string(&input).unwrap();
-        let project: KilProject = serde_json::from_str(&source).unwrap();
-        let resolver = LibraryResolver::discover(input.parent().unwrap(), Some(&cli));
-        let (libraries, diagnostics) = resolver.resolve_all(&project, &input, &source);
-        assert!(diagnostics.is_empty(), "derived-symbols: {diagnostics:#?}");
-        let generated = generate(&project, &libraries);
-        let output = manifest.join("../../target/kil-golden-derived-symbols");
-        if output.exists() {
-            fs::remove_dir_all(&output).unwrap();
-        }
-        generated.write_to(&output, &project.project.name).unwrap();
-        validate_generated(&output, &project.project.name).unwrap();
+    fn generation_is_deterministic_and_parses_without_system_kicad() {
+        let (project, libraries) = fixture();
+        let a = generate(&project, &libraries).unwrap();
+        let b = generate(&project, &libraries).unwrap();
+        assert_eq!(a.schematic, b.schematic);
+        assert_eq!(a.pcb, b.pcb);
+        let dir = tempfile::tempdir().unwrap();
+        a.write_to(dir.path(), &project.project.name).unwrap();
+        validate_generated(dir.path(), &project.project.name).unwrap();
+        let mut renamed = project.clone();
+        renamed.components.get_mut("R1").unwrap().reference = "R99".into();
+        assert_eq!(
+            stable_uuid(&project, "pcb/component/R1"),
+            stable_uuid(&renamed, "pcb/component/R1")
+        );
+        assert!(generate(&renamed, &libraries).unwrap().pcb.contains("R99"));
+        renamed.components.get_mut("R1").unwrap().value.clear();
+        assert!(
+            generate(&renamed, &libraries)
+                .unwrap()
+                .schematic
+                .contains("(property \"Value\" \"R99\"")
+        );
     }
 
     #[test]
     fn fifty_part_fixture_meets_size_and_compile_budget() {
-        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let input = manifest.join("../../examples/two-resistors.kil.json");
-        let source = fs::read_to_string(&input).unwrap();
-        let base: KilProject = serde_json::from_str(&source).unwrap();
-        let cli = PathBuf::from(r"C:\Program Files\KiCad\10.0\bin\kicad-cli.exe");
-        if !cli.is_file() {
-            return;
-        }
+        let (base, base_libraries) = fixture();
         let template = base.components.get("R1").unwrap().clone();
         let sch_template = base.schematic.placement.get("R1").unwrap().clone();
         let pcb_template = base.pcb.placement.get("R1").unwrap().clone();
@@ -1211,6 +1367,7 @@ mod tests {
                 .insert(reference.clone(), template.clone());
             let mut sch = sch_template.clone();
             sch.at = [20.0 + x, 20.0 + y];
+            sch.part = reference.clone();
             project.schematic.placement.insert(reference.clone(), sch);
             let mut pcb = pcb_template.clone();
             pcb.at = [x, y];
@@ -1221,11 +1378,15 @@ mod tests {
         project.nets.insert("A".into(), pin_ones);
         project.nets.insert("B".into(), pin_twos);
         let il = serde_json::to_string(&project).unwrap();
-        let resolver = LibraryResolver::discover(input.parent().unwrap(), Some(&cli));
-        let (libraries, diagnostics) = resolver.resolve_all(&project, &input, &il);
-        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+        let libraries = ResolvedLibraries {
+            components: project
+                .components
+                .keys()
+                .map(|id| (id.clone(), base_libraries.components["R1"].clone()))
+                .collect(),
+        };
         let started = Instant::now();
-        let generated = generate(&project, &libraries);
+        let generated = generate(&project, &libraries).unwrap();
         let elapsed = started.elapsed();
         let native_bytes = generated.schematic.len() + generated.pcb.len();
         assert!(

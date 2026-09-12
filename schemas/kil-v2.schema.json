@@ -1,5 +1,27 @@
 {
   "$defs": {
+    "Anchor": {
+      "anyOf": [
+        {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        {
+          "$ref": "#/$defs/RelativeAnchor"
+        },
+        {
+          "$ref": "#/$defs/PadAnchor"
+        },
+        {
+          "$ref": "#/$defs/EdgeAnchor"
+        }
+      ]
+    },
     "BoardSide": {
       "enum": [
         "front",
@@ -7,30 +29,117 @@
       ],
       "type": "string"
     },
-    "Component": {
+    "BuildProfile": {
       "additionalProperties": false,
       "properties": {
-        "fields": {
+        "routing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RoutingPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
+    "Circuit": {
+      "additionalProperties": false,
+      "properties": {
+        "instances": {
           "additionalProperties": {
-            "type": "string"
+            "$ref": "#/$defs/Instance"
           },
           "default": {},
           "type": "object"
         },
-        "footprint": {
-          "type": "string"
+        "nets": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "default": {},
+          "type": "object"
         },
-        "symbol": {
-          "type": "string"
+        "parts": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Part"
+          },
+          "default": {},
+          "type": "object"
         },
-        "value": {
-          "default": "",
-          "type": "string"
+        "unconnected": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "DistanceConstraint": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/Anchor"
+        },
+        "max": {
+          "exclusiveMinimum": 0.0,
+          "format": "double",
+          "type": "number"
+        },
+        "preferred": {
+          "default": false,
+          "type": "boolean"
+        },
+        "to": {
+          "$ref": "#/$defs/Anchor"
         }
       },
       "required": [
-        "symbol",
-        "footprint"
+        "from",
+        "to",
+        "max"
+      ],
+      "type": "object"
+    },
+    "EdgeAnchor": {
+      "additionalProperties": false,
+      "properties": {
+        "edge": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "fraction": {
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "offset": {
+          "default": [
+            0.0,
+            0.0
+          ],
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        }
+      },
+      "required": [
+        "edge",
+        "fraction"
       ],
       "type": "object"
     },
@@ -57,52 +166,175 @@
       ],
       "type": "object"
     },
-    "ModuleImport": {
+    "Instance": {
       "additionalProperties": false,
       "properties": {
-        "id": {
-          "type": "string"
+        "connections": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
         },
-        "net_map": {
+        "parameters": {
+          "additionalProperties": true,
+          "default": {},
+          "type": "object"
+        },
+        "pcb": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Transform"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "schematic": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Transform"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "None omits the supplied view, allowing a parent to place the instance's parts."
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "connections"
+      ],
+      "type": "object"
+    },
+    "NetClass": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_layers": {
+          "default": [
+            "F.Cu",
+            "B.Cu"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "clearance": {
+          "format": "double",
+          "type": "number"
+        },
+        "minimum_track_width": {
+          "format": "double",
+          "type": "number"
+        },
+        "nets": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "preferred_track_width": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "nets",
+        "clearance",
+        "minimum_track_width",
+        "preferred_track_width"
+      ],
+      "type": "object"
+    },
+    "PadAnchor": {
+      "additionalProperties": false,
+      "properties": {
+        "offset": {
+          "default": [
+            0.0,
+            0.0
+          ],
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "pad": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "pad"
+      ],
+      "type": "object"
+    },
+    "Part": {
+      "additionalProperties": false,
+      "properties": {
+        "fields": {
           "additionalProperties": {
             "type": "string"
           },
           "default": {},
           "type": "object"
         },
-        "path": {
+        "footprint": {
           "type": "string"
         },
-        "pcb": {
-          "$ref": "#/$defs/Transform",
-          "default": {
-            "at": [
-              0.0,
-              0.0
-            ],
-            "rotation": 0.0
-          }
+        "reference": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
         },
-        "schematic": {
-          "$ref": "#/$defs/Transform",
-          "default": {
-            "at": [
-              0.0,
-              0.0
-            ],
-            "rotation": 0.0
-          }
+        "reference_prefix": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "terminals": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Explicit aliases for physical terminal numbers. Library display names are not addresses.",
+          "type": "object"
+        },
+        "value": {
+          "default": "",
+          "type": "string"
         }
       },
       "required": [
-        "id",
-        "path"
+        "symbol",
+        "footprint",
+        "reference_prefix"
       ],
       "type": "object"
     },
-    "Pcb": {
+    "PcbDesign": {
       "additionalProperties": false,
+      "description": "PCB authoring geometry. Anchors resolve after library and module resolution.",
       "properties": {
+        "constraints": {
+          "additionalProperties": {
+            "$ref": "#/$defs/DistanceConstraint"
+          },
+          "default": {},
+          "type": "object"
+        },
         "holes": {
           "default": [],
           "items": {
@@ -111,6 +343,7 @@
           "type": "array"
         },
         "outline": {
+          "default": [],
           "items": {
             "items": {
               "format": "double",
@@ -124,30 +357,20 @@
         },
         "placement": {
           "additionalProperties": {
-            "$ref": "#/$defs/PcbPlacement"
+            "$ref": "#/$defs/PlacementIntent"
           },
+          "default": {},
           "type": "object"
         },
         "routes": {
           "additionalProperties": {
             "items": {
-              "$ref": "#/$defs/Route"
+              "$ref": "#/$defs/RouteIntent"
             },
             "type": "array"
           },
           "default": {},
           "type": "object"
-        },
-        "routing": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/RoutingPolicy"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
         },
         "silk": {
           "default": [],
@@ -171,27 +394,17 @@
           "type": "array"
         }
       },
-      "required": [
-        "outline",
-        "placement"
-      ],
       "type": "object"
     },
-    "PcbPlacement": {
+    "PlacementIntent": {
       "additionalProperties": false,
       "properties": {
         "at": {
-          "items": {
-            "format": "double",
-            "type": "number"
-          },
-          "maxItems": 2,
-          "minItems": 2,
-          "type": "array"
+          "$ref": "#/$defs/Anchor"
         },
-        "locked": {
-          "default": false,
-          "type": "boolean"
+        "mode": {
+          "$ref": "#/$defs/PlacementMode",
+          "default": "fixed"
         },
         "rotation": {
           "default": 0.0,
@@ -207,6 +420,13 @@
         "at"
       ],
       "type": "object"
+    },
+    "PlacementMode": {
+      "enum": [
+        "fixed",
+        "preferred"
+      ],
+      "type": "string"
     },
     "ProjectMeta": {
       "additionalProperties": false,
@@ -233,7 +453,32 @@
       ],
       "type": "object"
     },
-    "Route": {
+    "RelativeAnchor": {
+      "additionalProperties": false,
+      "properties": {
+        "offset": {
+          "default": [
+            0.0,
+            0.0
+          ],
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "part": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "part"
+      ],
+      "type": "object"
+    },
+    "RouteIntent": {
       "additionalProperties": false,
       "properties": {
         "layer": {
@@ -246,13 +491,7 @@
         },
         "path": {
           "items": {
-            "items": {
-              "format": "double",
-              "type": "number"
-            },
-            "maxItems": 2,
-            "minItems": 2,
-            "type": "array"
+            "$ref": "#/$defs/Anchor"
           },
           "type": "array"
         },
@@ -319,7 +558,19 @@
           "format": "double",
           "type": "number"
         },
-        "track_width": {
+        "minimum_track_width": {
+          "default": 0.15,
+          "format": "double",
+          "type": "number"
+        },
+        "net_classes": {
+          "additionalProperties": {
+            "$ref": "#/$defs/NetClass"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "preferred_track_width": {
           "default": 0.25,
           "format": "double",
           "type": "number"
@@ -333,40 +584,6 @@
           "default": 0.8,
           "format": "double",
           "type": "number"
-        }
-      },
-      "type": "object"
-    },
-    "Schematic": {
-      "additionalProperties": false,
-      "properties": {
-        "labels": {
-          "default": [],
-          "items": {
-            "$ref": "#/$defs/SchematicLabel"
-          },
-          "type": "array"
-        },
-        "no_connect": {
-          "default": [],
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "placement": {
-          "additionalProperties": {
-            "$ref": "#/$defs/SchematicPlacement"
-          },
-          "default": {},
-          "type": "object"
-        },
-        "wires": {
-          "default": [],
-          "items": {
-            "$ref": "#/$defs/SchematicWire"
-          },
-          "type": "array"
         }
       },
       "type": "object"
@@ -410,15 +627,52 @@
           "minItems": 2,
           "type": "array"
         },
+        "part": {
+          "type": "string"
+        },
         "rotation": {
           "default": 0.0,
           "format": "double",
           "type": "number"
+        },
+        "unit": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "required": [
+        "part",
+        "unit",
         "at"
       ],
+      "type": "object"
+    },
+    "SchematicView": {
+      "additionalProperties": false,
+      "properties": {
+        "labels": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SchematicLabel"
+          },
+          "type": "array"
+        },
+        "symbols": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SchematicPlacement"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "wires": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SchematicWire"
+          },
+          "type": "array"
+        }
+      },
       "type": "object"
     },
     "SchematicWire": {
@@ -501,12 +755,6 @@
       },
       "type": "object"
     },
-    "Units": {
-      "enum": [
-        "mm"
-      ],
-      "type": "string"
-    },
     "Via": {
       "additionalProperties": false,
       "properties": {
@@ -587,44 +835,40 @@
       "type": "object"
     }
   },
-  "$id": "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-v1.schema.json",
+  "$id": "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-v2.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
     "$schema": {
-      "description": "JSON Schema URI used by editors for completion and validation.",
-      "type": "string",
+      "type": [
+        "string",
+        "null"
+      ],
       "writeOnly": true
     },
-    "components": {
-      "additionalProperties": {
-        "$ref": "#/$defs/Component"
-      },
-      "type": "object"
+    "build": {
+      "$ref": "#/$defs/BuildProfile",
+      "default": {
+        "routing": null
+      }
+    },
+    "circuit": {
+      "$ref": "#/$defs/Circuit",
+      "default": {
+        "instances": {},
+        "nets": {},
+        "parts": {},
+        "unconnected": []
+      }
     },
     "format_version": {
+      "const": 2,
       "format": "uint32",
       "minimum": 0,
       "type": "integer"
     },
-    "imports": {
-      "default": [],
-      "items": {
-        "$ref": "#/$defs/ModuleImport"
-      },
-      "type": "array"
-    },
-    "nets": {
-      "additionalProperties": {
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
-      },
-      "type": "object"
-    },
     "pcb": {
-      "$ref": "#/$defs/Pcb"
+      "$ref": "#/$defs/PcbDesign"
     },
     "project": {
       "$ref": "#/$defs/ProjectMeta"
@@ -633,32 +877,27 @@
       "$ref": "#/$defs/Rules",
       "default": {
         "clearance": 0.2,
-        "track_width": 0.25,
+        "minimum_track_width": 0.15,
+        "net_classes": {},
+        "preferred_track_width": 0.25,
         "via_drill": 0.4,
         "via_size": 0.8
       }
     },
     "schematic": {
-      "$ref": "#/$defs/Schematic",
+      "$ref": "#/$defs/SchematicView",
       "default": {
         "labels": [],
-        "no_connect": [],
-        "placement": {},
+        "symbols": {},
         "wires": []
       }
-    },
-    "units": {
-      "$ref": "#/$defs/Units",
-      "default": "mm"
     }
   },
   "required": [
     "format_version",
     "project",
-    "components",
-    "nets",
     "pcb"
   ],
-  "title": "KilProject",
+  "title": "Project",
   "type": "object"
 }

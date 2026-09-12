@@ -1,10 +1,54 @@
 {
-  "$schema": "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-v2.schema.json",
   "format_version": 2,
   "project": {
     "name": "two-resistors",
     "title": "KiCad IL v1 smoke test",
     "kicad": 10
+  },
+  "units": "mm",
+  "components": {
+    "R1": {
+      "symbol": "Device:R",
+      "value": "10k",
+      "footprint": "Resistor_SMD:R_0603_1608Metric",
+      "reference": "R1"
+    },
+    "R2": {
+      "symbol": "Device:R",
+      "value": "20k",
+      "footprint": "Resistor_SMD:R_0603_1608Metric",
+      "reference": "R2"
+    }
+  },
+  "nets": {
+    "SIGNAL": [
+      "R1.1",
+      "R2.1"
+    ],
+    "GND": [
+      "R1.2",
+      "R2.2"
+    ]
+  },
+  "schematic": {
+    "placement": {
+      "R1": {
+        "at": [
+          50.8,
+          50.8
+        ],
+        "part": "R1",
+        "unit": 1
+      },
+      "R2": {
+        "at": [
+          63.5,
+          50.8
+        ],
+        "part": "R2",
+        "unit": 1
+      }
+    }
   },
   "pcb": {
     "outline": [
@@ -30,15 +74,13 @@
         "at": [
           5,
           5
-        ],
-        "mode": "fixed"
+        ]
       },
       "R2": {
         "at": [
           5,
           9
-        ],
-        "mode": "fixed"
+        ]
       }
     },
     "routes": {
@@ -137,54 +179,5 @@
         ]
       }
     ]
-  },
-  "circuit": {
-    "parts": {
-      "R1": {
-        "symbol": "Device:R",
-        "value": "10k",
-        "footprint": "Resistor_SMD:R_0603_1608Metric",
-        "reference_prefix": "R",
-        "reference": "R1"
-      },
-      "R2": {
-        "symbol": "Device:R",
-        "value": "20k",
-        "footprint": "Resistor_SMD:R_0603_1608Metric",
-        "reference_prefix": "R",
-        "reference": "R2"
-      }
-    },
-    "nets": {
-      "SIGNAL": [
-        "R1.1",
-        "R2.1"
-      ],
-      "GND": [
-        "R1.2",
-        "R2.2"
-      ]
-    },
-    "unconnected": []
-  },
-  "schematic": {
-    "symbols": {
-      "R1": {
-        "at": [
-          50.8,
-          50.8
-        ],
-        "part": "R1",
-        "unit": 1
-      },
-      "R2": {
-        "at": [
-          63.5,
-          50.8
-        ],
-        "part": "R2",
-        "unit": 1
-      }
-    }
   }
 }

@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 pub type Point = [f64; 2];
 
 pub const PROJECT_SCHEMA_URL: &str =
-    "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-v1.schema.json";
+    "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-v2.schema.json";
 pub const MODULE_SCHEMA_URL: &str =
-    "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-module-v1.schema.json";
+    "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-module-v2.schema.json";
 
 fn default_units() -> Units {
     Units::Mm
@@ -21,7 +21,9 @@ pub enum Units {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct KilProject {
+pub struct ResolvedProject {
+    #[serde(default)]
+    pub library_fingerprint: String,
     #[serde(rename = "$schema", default, skip_serializing)]
     #[schemars(with = "String")]
     #[schemars(description = "JSON Schema URI used by editors for completion and validation.")]
@@ -33,54 +35,10 @@ pub struct KilProject {
     pub components: IndexMap<String, Component>,
     pub nets: IndexMap<String, Vec<String>>,
     #[serde(default)]
-    pub imports: Vec<ModuleImport>,
-    #[serde(default)]
     pub schematic: Schematic,
     pub pcb: Pcb,
     #[serde(default)]
     pub rules: Rules,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ModuleFile {
-    #[serde(rename = "$schema", default, skip_serializing)]
-    #[schemars(with = "String")]
-    #[schemars(description = "JSON Schema URI used by editors for completion and validation.")]
-    pub schema: Option<String>,
-    pub format_version: u32,
-    pub module: ModuleMeta,
-    #[serde(default)]
-    pub components: IndexMap<String, Component>,
-    #[serde(default)]
-    pub nets: IndexMap<String, Vec<String>>,
-    #[serde(default)]
-    pub imports: Vec<ModuleImport>,
-    #[serde(default)]
-    pub schematic: Schematic,
-    #[serde(default)]
-    pub pcb: PcbFragment,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ModuleMeta {
-    pub id: String,
-    #[serde(default)]
-    pub title: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ModuleImport {
-    pub id: String,
-    pub path: String,
-    #[serde(default)]
-    pub net_map: IndexMap<String, String>,
-    #[serde(default)]
-    pub schematic: Transform,
-    #[serde(default)]
-    pub pcb: Transform,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
@@ -118,6 +76,9 @@ fn default_kicad_series() -> u32 {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Component {
+    pub reference: String,
+    #[serde(default)]
+    pub aliases: IndexMap<String, String>,
     pub symbol: String,
     #[serde(default)]
     pub value: String,
@@ -142,6 +103,8 @@ pub struct Schematic {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SchematicPlacement {
+    pub part: String,
+    pub unit: u32,
     pub at: Point,
     #[serde(default)]
     pub rotation: f64,
@@ -309,10 +272,14 @@ fn default_front_silk() -> String {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Rules {
+    #[serde(default = "default_min_width")]
+    pub minimum_track_width: f64,
+    #[serde(default)]
+    pub net_classes: IndexMap<String, NetClass>,
     #[serde(default = "default_clearance")]
     pub clearance: f64,
     #[serde(default = "default_track_width")]
-    pub track_width: f64,
+    pub preferred_track_width: f64,
     #[serde(default = "default_via_size")]
     pub via_size: f64,
     #[serde(default = "default_via_drill")]
@@ -323,7 +290,9 @@ impl Default for Rules {
     fn default() -> Self {
         Self {
             clearance: default_clearance(),
-            track_width: default_track_width(),
+            preferred_track_width: default_track_width(),
+            minimum_track_width: default_min_width(),
+            net_classes: IndexMap::new(),
             via_size: default_via_size(),
             via_drill: default_via_drill(),
         }
@@ -341,4 +310,41 @@ fn default_via_size() -> f64 {
 }
 fn default_via_drill() -> f64 {
     0.4
+}
+
+fn default_min_width() -> f64 {
+    0.15
+}
+fn copper_layers() -> Vec<String> {
+    vec!["F.Cu".into(), "B.Cu".into()]
+}
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct NetClass {
+    pub nets: Vec<String>,
+    pub clearance: f64,
+    pub minimum_track_width: f64,
+    pub preferred_track_width: f64,
+    #[serde(default = "copper_layers")]
+    pub allowed_layers: Vec<String>,
+}
+impl Rules {
+    pub fn class(&self, net: &str) -> Option<&NetClass> {
+        self.net_classes
+            .values()
+            .find(|c| c.nets.iter().any(|n| n == net))
+    }
+    pub fn width(&self, net: &str) -> f64 {
+        self.class(net)
+            .map_or(self.preferred_track_width, |c| c.preferred_track_width)
+    }
+}
+
+/// Names embedded in KiCad rule expressions use a restricted identifier alphabet.
+pub(crate) fn valid_net_class_name(name: &str) -> bool {
+    !name.is_empty()
+        && name != "Default"
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }

@@ -14,7 +14,7 @@ categories = ["command-line-utilities", "development-tools"]
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
-kil-core = { version = "0.1.0", path = "../kil-core" }
+kil-core = { version = "0.2.0", path = "../kil-core" }
 serde_json.workspace = true
 
 [[bin]]

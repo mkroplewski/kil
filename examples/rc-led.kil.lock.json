@@ -1,0 +1,10 @@
+{
+  "format_version": 2,
+  "assets": {
+    "footprint:Capacitor_SMD:C_0603_1608Metric": "e50a6ddd644ef5045d07dbf3fbc7ae48f7f4589d058c72abd7358990ca695b0c",
+    "footprint:Resistor_SMD:R_0603_1608Metric": "e485e42a56c89ca40e6080755a85122b57c9cd692f111d1bc507c76f8fc12ad2",
+    "symbol:Device:C": "22bb122fed5bc6753b5504e8cad59a8b637b2d0cdc5f88c5b061bdc4388e143b",
+    "symbol:Device:LED": "724e49629a5ec4f3d56c0aa42e6ff1314b29b00a6bda6995556af7d1d269e635",
+    "symbol:Device:R": "a7a16f9a45447a293d9546291040840b5633c179c7082c7d27934f10b9d2e0eb"
+  }
+}

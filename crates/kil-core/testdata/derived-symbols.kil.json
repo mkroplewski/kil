@@ -1,41 +1,85 @@
 {
-  "$schema": "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-v1.schema.json",
-  "format_version": 1,
+  "$schema": "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-v2.schema.json",
+  "format_version": 2,
   "project": {
     "name": "derived-symbols",
     "title": "Derived symbol support",
     "kicad": 10
   },
-  "units": "mm",
   "rules": {
     "clearance": 0.2,
-    "track_width": 0.25,
     "via_drill": 0.4,
-    "via_size": 0.8
+    "via_size": 0.8,
+    "preferred_track_width": 0.25
   },
-  "components": {
-    "U1": {
-      "symbol": "Regulator_Linear:AP2112K-3.3",
-      "value": "AP2112K-3.3",
-      "footprint": "Package_TO_SOT_SMD:SOT-23-5"
-    },
-    "U2": {
-      "symbol": "MCU_Microchip_ATtiny:ATtiny1616-S",
-      "value": "ATtiny1616",
-      "footprint": "Package_SO:SOIC-20W_7.5x12.8mm_P1.27mm"
+  "pcb": {
+    "outline": [
+      [
+        0,
+        0
+      ],
+      [
+        35,
+        0
+      ],
+      [
+        35,
+        25
+      ],
+      [
+        0,
+        25
+      ]
+    ],
+    "placement": {
+      "U1": {
+        "at": [
+          8,
+          12.5
+        ],
+        "mode": "fixed"
+      },
+      "U2": {
+        "at": [
+          23,
+          12.5
+        ],
+        "mode": "fixed"
+      }
     }
   },
-  "nets": {
-    "VIN": ["U1.1", "U1.3"],
-    "+3V3": ["U1.5", "U2.1"],
-    "GND": ["U1.2", "U2.20"]
-  },
-  "schematic": {
-    "placement": {
-      "U1": { "at": [50.8, 50.8] },
-      "U2": { "at": [88.9, 50.8] }
+  "circuit": {
+    "parts": {
+      "U1": {
+        "symbol": "Regulator_Linear:AP2112K-3.3",
+        "value": "AP2112K-3.3",
+        "footprint": "Package_TO_SOT_SMD:SOT-23-5",
+        "reference_prefix": "U",
+        "reference": "U1"
+      },
+      "U2": {
+        "symbol": "MCU_Microchip_ATtiny:ATtiny1616-S",
+        "value": "ATtiny1616",
+        "footprint": "Package_SO:SOIC-20W_7.5x12.8mm_P1.27mm",
+        "reference_prefix": "U",
+        "reference": "U2"
+      }
     },
-    "no_connect": [
+    "nets": {
+      "VIN": [
+        "U1.1",
+        "U1.3"
+      ],
+      "+3V3": [
+        "U1.5",
+        "U2.1"
+      ],
+      "GND": [
+        "U1.2",
+        "U2.20"
+      ]
+    },
+    "unconnected": [
       "U1.4",
       "U2.2",
       "U2.3",
@@ -57,11 +101,24 @@
       "U2.19"
     ]
   },
-  "pcb": {
-    "outline": [[0, 0], [35, 0], [35, 25], [0, 25]],
-    "placement": {
-      "U1": { "at": [8, 12.5] },
-      "U2": { "at": [23, 12.5] }
+  "schematic": {
+    "symbols": {
+      "U1": {
+        "at": [
+          50.8,
+          50.8
+        ],
+        "part": "U1",
+        "unit": 1
+      },
+      "U2": {
+        "at": [
+          88.9,
+          50.8
+        ],
+        "part": "U2",
+        "unit": 1
+      }
     }
   }
 }

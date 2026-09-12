@@ -1,0 +1,980 @@
+{
+  "$defs": {
+    "Anchor": {
+      "anyOf": [
+        {
+          "items": {
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+                "type": "string"
+              }
+            ]
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        {
+          "$ref": "#/$defs/RelativeAnchor"
+        },
+        {
+          "$ref": "#/$defs/PadAnchor"
+        },
+        {
+          "$ref": "#/$defs/EdgeAnchor"
+        }
+      ]
+    },
+    "BoardSide": {
+      "enum": [
+        "front",
+        "back"
+      ],
+      "type": "string"
+    },
+    "Circuit": {
+      "additionalProperties": false,
+      "properties": {
+        "instances": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Instance"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "nets": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "parts": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Part"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "unconnected": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "DistanceConstraint": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/Anchor"
+        },
+        "max": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "format": "double",
+              "type": "number"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        },
+        "preferred": {
+          "anyOf": [
+            {
+              "default": false,
+              "type": "boolean"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        },
+        "to": {
+          "$ref": "#/$defs/Anchor"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "max"
+      ],
+      "type": "object"
+    },
+    "EdgeAnchor": {
+      "additionalProperties": false,
+      "properties": {
+        "edge": {
+          "anyOf": [
+            {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        },
+        "fraction": {
+          "anyOf": [
+            {
+              "format": "double",
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        },
+        "offset": {
+          "default": [
+            0.0,
+            0.0
+          ],
+          "items": {
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+                "type": "string"
+              }
+            ]
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        }
+      },
+      "required": [
+        "edge",
+        "fraction"
+      ],
+      "type": "object"
+    },
+    "Hole": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "items": {
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+                "type": "string"
+              }
+            ]
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "diameter": {
+          "anyOf": [
+            {
+              "format": "double",
+              "type": "number"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "at",
+        "diameter"
+      ],
+      "type": "object"
+    },
+    "Instance": {
+      "additionalProperties": false,
+      "properties": {
+        "connections": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "parameters": {
+          "additionalProperties": true,
+          "default": {},
+          "type": "object"
+        },
+        "pcb": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Transform"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "schematic": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Transform"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "None omits the supplied view, allowing a parent to place the instance's parts."
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "connections"
+      ],
+      "type": "object"
+    },
+    "PadAnchor": {
+      "additionalProperties": false,
+      "properties": {
+        "offset": {
+          "default": [
+            0.0,
+            0.0
+          ],
+          "items": {
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+                "type": "string"
+              }
+            ]
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "pad": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "pad"
+      ],
+      "type": "object"
+    },
+    "Parameter": {
+      "additionalProperties": false,
+      "properties": {
+        "default": {
+          "default": null
+        },
+        "type": {
+          "$ref": "#/$defs/ParameterType"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "ParameterType": {
+      "enum": [
+        "string",
+        "number",
+        "boolean"
+      ],
+      "type": "string"
+    },
+    "Part": {
+      "additionalProperties": false,
+      "properties": {
+        "fields": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "footprint": {
+          "type": "string"
+        },
+        "reference": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reference_prefix": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "terminals": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Explicit aliases for physical terminal numbers. Library display names are not addresses.",
+          "type": "object"
+        },
+        "value": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "symbol",
+        "footprint",
+        "reference_prefix"
+      ],
+      "type": "object"
+    },
+    "PcbDesign": {
+      "additionalProperties": false,
+      "description": "PCB authoring geometry. Anchors resolve after library and module resolution.",
+      "properties": {
+        "constraints": {
+          "additionalProperties": {
+            "$ref": "#/$defs/DistanceConstraint"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "holes": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Hole"
+          },
+          "type": "array"
+        },
+        "outline": {
+          "default": [],
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "format": "double",
+                  "type": "number"
+                },
+                {
+                  "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+                  "type": "string"
+                }
+              ]
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "placement": {
+          "additionalProperties": {
+            "$ref": "#/$defs/PlacementIntent"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "routes": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/RouteIntent"
+            },
+            "type": "array"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "silk": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SilkText"
+          },
+          "type": "array"
+        },
+        "vias": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Via"
+          },
+          "type": "array"
+        },
+        "zones": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Zone"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "PlacementIntent": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Anchor"
+        },
+        "mode": {
+          "$ref": "#/$defs/PlacementMode",
+          "default": "fixed"
+        },
+        "rotation": {
+          "anyOf": [
+            {
+              "default": 0.0,
+              "format": "double",
+              "type": "number"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        },
+        "side": {
+          "$ref": "#/$defs/BoardSide",
+          "default": "front"
+        }
+      },
+      "required": [
+        "at"
+      ],
+      "type": "object"
+    },
+    "PlacementMode": {
+      "enum": [
+        "fixed",
+        "preferred"
+      ],
+      "type": "string"
+    },
+    "RelativeAnchor": {
+      "additionalProperties": false,
+      "properties": {
+        "offset": {
+          "default": [
+            0.0,
+            0.0
+          ],
+          "items": {
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+                "type": "string"
+              }
+            ]
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "part": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "part"
+      ],
+      "type": "object"
+    },
+    "RouteIntent": {
+      "additionalProperties": false,
+      "properties": {
+        "layer": {
+          "default": "F.Cu",
+          "type": "string"
+        },
+        "locked": {
+          "anyOf": [
+            {
+              "default": false,
+              "type": "boolean"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        },
+        "path": {
+          "items": {
+            "$ref": "#/$defs/Anchor"
+          },
+          "type": "array"
+        },
+        "width": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "SchematicLabel": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "items": {
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+                "type": "string"
+              }
+            ]
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "net": {
+          "type": "string"
+        },
+        "rotation": {
+          "anyOf": [
+            {
+              "default": 0.0,
+              "format": "double",
+              "type": "number"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "net",
+        "at"
+      ],
+      "type": "object"
+    },
+    "SchematicPlacement": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "items": {
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+                "type": "string"
+              }
+            ]
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "part": {
+          "type": "string"
+        },
+        "rotation": {
+          "anyOf": [
+            {
+              "default": 0.0,
+              "format": "double",
+              "type": "number"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "part",
+        "unit",
+        "at"
+      ],
+      "type": "object"
+    },
+    "SchematicView": {
+      "additionalProperties": false,
+      "properties": {
+        "labels": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SchematicLabel"
+          },
+          "type": "array"
+        },
+        "symbols": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SchematicPlacement"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "wires": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SchematicWire"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "SchematicWire": {
+      "additionalProperties": false,
+      "properties": {
+        "net": {
+          "type": "string"
+        },
+        "path": {
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "format": "double",
+                  "type": "number"
+                },
+                {
+                  "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+                  "type": "string"
+                }
+              ]
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "net",
+        "path"
+      ],
+      "type": "object"
+    },
+    "SilkText": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "items": {
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+                "type": "string"
+              }
+            ]
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "layer": {
+          "default": "F.SilkS",
+          "type": "string"
+        },
+        "rotation": {
+          "anyOf": [
+            {
+              "default": 0.0,
+              "format": "double",
+              "type": "number"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "at"
+      ],
+      "type": "object"
+    },
+    "Transform": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "default": [
+            0.0,
+            0.0
+          ],
+          "items": {
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+                "type": "string"
+              }
+            ]
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "rotation": {
+          "anyOf": [
+            {
+              "default": 0.0,
+              "format": "double",
+              "type": "number"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Via": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "items": {
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+                "type": "string"
+              }
+            ]
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "drill": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "locked": {
+          "anyOf": [
+            {
+              "default": false,
+              "type": "boolean"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        },
+        "net": {
+          "type": "string"
+        },
+        "size": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "net",
+        "at"
+      ],
+      "type": "object"
+    },
+    "Zone": {
+      "additionalProperties": false,
+      "properties": {
+        "clearance": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "layer": {
+          "default": "F.Cu",
+          "type": "string"
+        },
+        "net": {
+          "type": "string"
+        },
+        "outline": {
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "format": "double",
+                  "type": "number"
+                },
+                {
+                  "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+                  "type": "string"
+                }
+              ]
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "net",
+        "outline"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-module-v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "writeOnly": true
+    },
+    "circuit": {
+      "$ref": "#/$defs/Circuit",
+      "default": {
+        "instances": {},
+        "nets": {},
+        "parts": {},
+        "unconnected": []
+      }
+    },
+    "format_version": {
+      "const": 2,
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "module": {
+      "type": "string"
+    },
+    "parameters": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Parameter"
+      },
+      "default": {},
+      "type": "object"
+    },
+    "pcb": {
+      "$ref": "#/$defs/PcbDesign",
+      "default": {
+        "constraints": {},
+        "holes": [],
+        "outline": [],
+        "placement": {},
+        "routes": {},
+        "silk": [],
+        "vias": [],
+        "zones": []
+      }
+    },
+    "ports": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Public port name to local net name. All other nets are private.",
+      "type": "object"
+    },
+    "schematic": {
+      "$ref": "#/$defs/SchematicView",
+      "default": {
+        "labels": [],
+        "symbols": {},
+        "wires": []
+      }
+    }
+  },
+  "required": [
+    "format_version",
+    "module",
+    "ports"
+  ],
+  "title": "Module",
+  "type": "object"
+}

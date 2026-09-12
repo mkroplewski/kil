@@ -1,10 +1,73 @@
 {
-  "$schema": "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-v2.schema.json",
   "format_version": 2,
   "project": {
     "name": "rc-led",
     "title": "RC and LED golden",
     "kicad": 10
+  },
+  "units": "mm",
+  "components": {
+    "R1": {
+      "symbol": "Device:R",
+      "value": "1k",
+      "footprint": "Resistor_SMD:R_0603_1608Metric",
+      "reference": "R1"
+    },
+    "C1": {
+      "symbol": "Device:C",
+      "value": "100n",
+      "footprint": "Capacitor_SMD:C_0603_1608Metric",
+      "reference": "C1"
+    },
+    "D1": {
+      "symbol": "Device:LED",
+      "value": "GREEN",
+      "footprint": "Resistor_SMD:R_0603_1608Metric",
+      "reference": "D1"
+    }
+  },
+  "nets": {
+    "DRIVE": [
+      "R1.1",
+      "D1.1"
+    ],
+    "RETURN": [
+      "R1.2",
+      "C1.2"
+    ],
+    "SENSE": [
+      "D1.2",
+      "C1.1"
+    ]
+  },
+  "schematic": {
+    "placement": {
+      "R1": {
+        "at": [
+          50.8,
+          45.72
+        ],
+        "part": "R1",
+        "unit": 1
+      },
+      "D1": {
+        "at": [
+          63.5,
+          45.72
+        ],
+        "part": "D1",
+        "unit": 1
+      },
+      "C1": {
+        "at": [
+          63.5,
+          55.88
+        ],
+        "rotation": 90,
+        "part": "C1",
+        "unit": 1
+      }
+    }
   },
   "pcb": {
     "outline": [
@@ -30,23 +93,20 @@
         "at": [
           5,
           4
-        ],
-        "mode": "fixed"
+        ]
       },
       "D1": {
         "at": [
           5,
           9
-        ],
-        "mode": "fixed"
+        ]
       },
       "C1": {
         "at": [
           13,
           6.5
         ],
-        "rotation": 90,
-        "mode": "fixed"
+        "rotation": 90
       }
     },
     "routes": {
@@ -130,74 +190,5 @@
         ]
       }
     ]
-  },
-  "circuit": {
-    "parts": {
-      "R1": {
-        "symbol": "Device:R",
-        "value": "1k",
-        "footprint": "Resistor_SMD:R_0603_1608Metric",
-        "reference_prefix": "R",
-        "reference": "R1"
-      },
-      "C1": {
-        "symbol": "Device:C",
-        "value": "100n",
-        "footprint": "Capacitor_SMD:C_0603_1608Metric",
-        "reference_prefix": "C",
-        "reference": "C1"
-      },
-      "D1": {
-        "symbol": "Device:LED",
-        "value": "GREEN",
-        "footprint": "Resistor_SMD:R_0603_1608Metric",
-        "reference_prefix": "D",
-        "reference": "D1"
-      }
-    },
-    "nets": {
-      "DRIVE": [
-        "R1.1",
-        "D1.1"
-      ],
-      "RETURN": [
-        "R1.2",
-        "C1.2"
-      ],
-      "SENSE": [
-        "D1.2",
-        "C1.1"
-      ]
-    },
-    "unconnected": []
-  },
-  "schematic": {
-    "symbols": {
-      "R1": {
-        "at": [
-          50.8,
-          45.72
-        ],
-        "part": "R1",
-        "unit": 1
-      },
-      "D1": {
-        "at": [
-          63.5,
-          45.72
-        ],
-        "part": "D1",
-        "unit": 1
-      },
-      "C1": {
-        "at": [
-          63.5,
-          55.88
-        ],
-        "rotation": 90,
-        "part": "C1",
-        "unit": 1
-      }
-    }
   }
 }

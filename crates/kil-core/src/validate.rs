@@ -1,11 +1,11 @@
 use crate::diagnostic::Diagnostic;
 use crate::library::ResolvedLibraries;
-use crate::model::{KilProject, Point};
+use crate::model::{Point, ResolvedProject};
 use crate::source_map::SourceMap;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-pub fn validate_basic(project: &KilProject, file: &Path, source: &str) -> Vec<Diagnostic> {
+pub fn validate_basic(project: &ResolvedProject, file: &Path, source: &str) -> Vec<Diagnostic> {
     let map = SourceMap::new(source);
     let mut out = Vec::new();
     let mut push = |mut d: Diagnostic, path: String| {
@@ -14,20 +14,20 @@ pub fn validate_basic(project: &KilProject, file: &Path, source: &str) -> Vec<Di
         out.push(d);
     };
 
-    if project.format_version != 1 {
+    if project.format_version != 2 {
         push(
             Diagnostic::error(
                 "KIL001",
                 format!("unsupported format_version {}", project.format_version),
                 file,
             )
-            .with_help("use format_version: 1"),
+            .with_help("use format_version: 2"),
             "/format_version".into(),
         );
     }
     if project.project.kicad != 10 {
         push(
-            Diagnostic::error("KIL002", "v1 targets KiCad 10 only", file),
+            Diagnostic::error("KIL002", "v2 targets KiCad 10 only", file),
             "/project/kicad".into(),
         );
     }
@@ -113,7 +113,12 @@ pub fn validate_basic(project: &KilProject, file: &Path, source: &str) -> Vec<Di
     }
 
     for reference in project.components.keys() {
-        if !project.schematic.placement.contains_key(reference) {
+        if !project
+            .schematic
+            .placement
+            .values()
+            .any(|p| &p.part == reference)
+        {
             push(
                 Diagnostic::error(
                     "SCH001",
@@ -134,7 +139,8 @@ pub fn validate_basic(project: &KilProject, file: &Path, source: &str) -> Vec<Di
             );
         }
     }
-    for reference in project.schematic.placement.keys() {
+    for placement in project.schematic.placement.values() {
+        let reference = &placement.part;
         if !project.components.contains_key(reference) {
             push(
                 Diagnostic::error(
@@ -306,7 +312,7 @@ pub fn validate_basic(project: &KilProject, file: &Path, source: &str) -> Vec<Di
         }
     }
     if project.rules.clearance <= 0.0
-        || project.rules.track_width <= 0.0
+        || project.rules.preferred_track_width <= 0.0
         || project.rules.via_size <= 0.0
         || project.rules.via_drill <= 0.0
         || project.rules.via_drill >= project.rules.via_size
@@ -320,17 +326,186 @@ pub fn validate_basic(project: &KilProject, file: &Path, source: &str) -> Vec<Di
             "/rules".into(),
         );
     }
+    if project.rules.minimum_track_width <= 0.0
+        || project.rules.preferred_track_width < project.rules.minimum_track_width
+    {
+        push(
+            Diagnostic::error(
+                "RULE002",
+                "preferred width must meet the positive minimum width",
+                file,
+            ),
+            "/rules".into(),
+        );
+    }
+    let mut assigned = BTreeSet::new();
+    for (name, class) in &project.rules.net_classes {
+        if !crate::model::valid_net_class_name(name)
+            || class.minimum_track_width < project.rules.minimum_track_width
+            || class.preferred_track_width < class.minimum_track_width
+            || class.clearance < project.rules.clearance
+            || class.allowed_layers.is_empty()
+            || class
+                .allowed_layers
+                .iter()
+                .any(|l| l != "F.Cu" && l != "B.Cu")
+        {
+            push(
+                Diagnostic::error(
+                    "RULE003",
+                    format!("invalid net class '{name}'; class limits must meet board minimums"),
+                    file,
+                ),
+                format!("/rules/net_classes/{name}"),
+            );
+        }
+        for net in &class.nets {
+            if !project.nets.contains_key(net) || !assigned.insert(net) {
+                push(
+                    Diagnostic::error(
+                        "RULE004",
+                        format!("unknown or multiply assigned net '{net}'"),
+                        file,
+                    ),
+                    format!("/rules/net_classes/{name}"),
+                );
+            }
+        }
+    }
+    for (net, routes) in &project.pcb.routes {
+        for route in routes {
+            let class = project.rules.class(net);
+            let min = class.map_or(project.rules.minimum_track_width, |c| c.minimum_track_width);
+            if route.width.unwrap_or(project.rules.width(net)) < min
+                || class.is_some_and(|c| !c.allowed_layers.contains(&route.layer))
+            {
+                push(
+                    Diagnostic::error(
+                        "RULE005",
+                        format!("route on '{net}' violates width or allowed layer requirements"),
+                        file,
+                    ),
+                    format!("/pcb/routes/{net}"),
+                );
+            }
+        }
+    }
+    for via in &project.pcb.vias {
+        if project.rules.class(&via.net).is_some_and(|c| {
+            !c.allowed_layers.iter().any(|l| l == "F.Cu")
+                || !c.allowed_layers.iter().any(|l| l == "B.Cu")
+        }) {
+            push(
+                Diagnostic::error(
+                    "RULE005",
+                    format!("through via on '{}' crosses a forbidden layer", via.net),
+                    file,
+                ),
+                "/pcb/vias".into(),
+            );
+        }
+    }
+    for zone in &project.pcb.zones {
+        if project
+            .rules
+            .class(&zone.net)
+            .is_some_and(|c| !c.allowed_layers.contains(&zone.layer))
+        {
+            push(
+                Diagnostic::error(
+                    "RULE005",
+                    format!("zone on '{}' uses a forbidden layer", zone.net),
+                    file,
+                ),
+                "/pcb/zones".into(),
+            );
+        }
+    }
     out
 }
 
 pub fn validate_libraries(
-    project: &KilProject,
+    project: &ResolvedProject,
     libraries: &ResolvedLibraries,
     file: &Path,
     source: &str,
 ) -> Vec<Diagnostic> {
     let map = SourceMap::new(source);
     let mut out = Vec::new();
+    for (id, resolved) in &libraries.components {
+        for (alias, number) in &project.components[id].aliases {
+            if !resolved.pins.iter().any(|p| p.number == *number) {
+                out.push(
+                    Diagnostic::error(
+                        "LIB009",
+                        format!("alias '{alias}' points to unknown terminal '{number}'"),
+                        file,
+                    )
+                    .at_path(format!("/components/{id}/terminals/{alias}")),
+                );
+            }
+        }
+        let mut units = BTreeSet::new();
+        for placement in project
+            .schematic
+            .placement
+            .values()
+            .filter(|p| &p.part == id)
+        {
+            if placement.unit == 0 || !units.insert(placement.unit) {
+                out.push(Diagnostic::error(
+                    "SCH007",
+                    format!("duplicate or zero symbol unit for '{id}'"),
+                    file,
+                ));
+            }
+            if !resolved
+                .pins
+                .iter()
+                .any(|pin| pin.unit == 0 || pin.unit == placement.unit)
+            {
+                out.push(Diagnostic::error(
+                    "SCH008",
+                    format!("unknown symbol unit {} for '{id}'", placement.unit),
+                    file,
+                ));
+            }
+        }
+        for unit in resolved
+            .pins
+            .iter()
+            .map(|pin| pin.unit)
+            .filter(|u| *u > 0)
+            .collect::<BTreeSet<_>>()
+        {
+            if !units.contains(&unit) {
+                out.push(Diagnostic::error(
+                    "SCH009",
+                    format!("missing symbol unit {unit} for '{id}'"),
+                    file,
+                ));
+            }
+        }
+    }
+    let connected: BTreeSet<_> = project.nets.values().flatten().collect();
+    for endpoint in &project.schematic.no_connect {
+        if connected.contains(endpoint) {
+            out.push(Diagnostic::error(
+                "NET007",
+                format!("'{endpoint}' is both connected and intentionally unconnected"),
+                file,
+            ));
+        }
+        if let Some((part, _)) = parse_endpoint(endpoint)
+            && !project.components.contains_key(part)
+        {
+            out.push(Diagnostic::error(
+                "NET003",
+                format!("unknown component '{part}'"),
+                file,
+            ));
+        }
+    }
     for (net, endpoints) in &project.nets {
         for endpoint in endpoints {
             let Some((reference, pin_query)) = parse_endpoint(endpoint) else {
@@ -342,7 +517,7 @@ pub fn validate_libraries(
             let matches = resolved
                 .pins
                 .iter()
-                .filter(|pin| pin.number == pin_query || pin.name.as_deref() == Some(pin_query))
+                .filter(|pin| pin.number == pin_query)
                 .collect::<Vec<_>>();
             let path = format!("/nets/{net}/{endpoint}");
             let mut diag = match matches.len() {
@@ -353,7 +528,7 @@ pub fn validate_libraries(
                         file,
                     )
                     .with_help(
-                        "use a pin number or a unique pin name from the referenced KiCad symbol",
+                        "use a physical pin number or an explicit terminal alias declared on the part",
                     ),
                 ),
                 1 => None,
@@ -396,10 +571,7 @@ pub fn validate_libraries(
             continue;
         };
         if let Some(resolved) = libraries.components.get(reference)
-            && !resolved
-                .pins
-                .iter()
-                .any(|p| p.number == pin_query || p.name.as_deref() == Some(pin_query))
+            && !resolved.pins.iter().any(|p| p.number == pin_query)
         {
             let path = format!("/schematic/no_connect/{endpoint}");
             out.push(
@@ -474,16 +646,63 @@ mod tests {
     use super::*;
 
     #[test]
+    fn net_classes_reject_thin_tracks_and_forbidden_layers() {
+        let (mut project, _) = crate::kicad::tests::fixture();
+        project.rules.net_classes.insert(
+            "signals".into(),
+            crate::model::NetClass {
+                nets: vec!["SIGNAL".into()],
+                clearance: 0.2,
+                minimum_track_width: 0.3,
+                preferred_track_width: 0.4,
+                allowed_layers: vec!["F.Cu".into()],
+            },
+        );
+        project.pcb.routes["SIGNAL"][0].width = Some(0.2);
+        assert!(
+            validate_basic(&project, Path::new("test.json"), "")
+                .iter()
+                .any(|d| d.code == "RULE005")
+        );
+        project.pcb.routes["SIGNAL"][0].width = Some(0.4);
+        project.pcb.routes["SIGNAL"][0].layer = "B.Cu".into();
+        assert!(
+            validate_basic(&project, Path::new("test.json"), "")
+                .iter()
+                .any(|d| d.code == "RULE005")
+        );
+        project.pcb.routes["SIGNAL"][0].layer = "F.Cu".into();
+        project.pcb.vias.push(crate::model::Via {
+            net: "SIGNAL".into(),
+            at: [1., 2.],
+            size: None,
+            drill: None,
+            locked: false,
+        });
+        project.rules.net_classes["signals"].allowed_layers = vec!["F.Cu".into(), "F.Cu".into()];
+        assert!(
+            validate_basic(&project, Path::new("test.json"), "")
+                .iter()
+                .any(|d| d.code == "RULE005")
+        );
+        project.rules.net_classes["signals"].allowed_layers = vec!["F.Cu".into(), "B.Cu".into()];
+        assert!(
+            !validate_basic(&project, Path::new("test.json"), "")
+                .iter()
+                .any(|d| d.code == "RULE005")
+        );
+    }
+    #[test]
     fn validator_collects_independent_errors() {
         let source = r#"{
           "format_version": 1,
           "project": { "name": "bad", "kicad": 10 },
-          "components": { "R1": { "symbol": "Device:R", "value": "1k", "footprint": "Resistor_SMD:R_0603_1608Metric" } },
+          "components": { "R1": { "reference": "R1", "symbol": "Device:R", "value": "1k", "footprint": "Resistor_SMD:R_0603_1608Metric" } },
           "nets": { "N": ["MISSING.1"] },
           "schematic": { "placement": {} },
           "pcb": { "outline": [[0,0], [1,0]], "placement": {}, "routes": { "OTHER": [{ "path": [[0,0]] }] } }
         }"#;
-        let project: KilProject = serde_json::from_str(source).unwrap();
+        let project: ResolvedProject = serde_json::from_str(source).unwrap();
         let diagnostics = validate_basic(&project, Path::new("bad.kil.json"), source);
         let codes = diagnostics
             .iter()

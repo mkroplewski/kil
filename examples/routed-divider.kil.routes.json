@@ -1,0 +1,111 @@
+{
+  "format_version": 2,
+  "project": "routed-divider",
+  "input_fingerprint": "d1fb31aa65be4949fbef2425d2d28e0a86ab5b5c4e896328c2666f7a77f99ffd",
+  "engine": {
+    "name": "kicad-routing-tools",
+    "version": "0.21.4"
+  },
+  "routes": {
+    "SIGNAL": [
+      {
+        "layer": "F.Cu",
+        "width": 0.3,
+        "path": [
+          [
+            4.175,
+            5.0
+          ],
+          [
+            4.2,
+            5.0
+          ],
+          [
+            4.2,
+            9.0
+          ],
+          [
+            4.175,
+            9.0
+          ]
+        ],
+        "locked": false
+      }
+    ],
+    "GND": [
+      {
+        "layer": "B.Cu",
+        "width": 0.25,
+        "path": [
+          [
+            5.86,
+            5.18
+          ],
+          [
+            5.9,
+            5.2
+          ]
+        ],
+        "locked": false
+      },
+      {
+        "layer": "F.Cu",
+        "width": 0.209,
+        "path": [
+          [
+            5.825,
+            9.0
+          ],
+          [
+            5.8,
+            9.0
+          ],
+          [
+            5.8,
+            5.3
+          ],
+          [
+            5.9,
+            5.2
+          ]
+        ],
+        "locked": false
+      },
+      {
+        "layer": "F.Cu",
+        "width": 0.25,
+        "path": [
+          [
+            5.825,
+            5.0
+          ],
+          [
+            5.8,
+            5.0
+          ],
+          [
+            5.8,
+            5.1
+          ],
+          [
+            5.9,
+            5.2
+          ]
+        ],
+        "locked": false
+      }
+    ]
+  },
+  "vias": [
+    {
+      "net": "GND",
+      "at": [
+        5.9,
+        5.2
+      ],
+      "size": 0.8,
+      "drill": 0.4,
+      "locked": false
+    }
+  ]
+}

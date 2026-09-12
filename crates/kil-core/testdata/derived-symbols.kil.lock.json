@@ -1,0 +1,9 @@
+{
+  "format_version": 2,
+  "assets": {
+    "footprint:Package_SO:SOIC-20W_7.5x12.8mm_P1.27mm": "8ebc0682ca14c77e17dd1363e07e33ccc9b4569301e4c202956d571bf5a49ed8",
+    "footprint:Package_TO_SOT_SMD:SOT-23-5": "6c046ca39f73e30303fcd66652a85074f623e9606f322dc000b666da737a83cc",
+    "symbol:MCU_Microchip_ATtiny:ATtiny1616-S": "2397b1d0dafb1e63ed3ed3c8592864d96ff45456f0c8c6ac96b5ebd9ca91b9cf",
+    "symbol:Regulator_Linear:AP2112K-3.3": "185aea2e160b622356f4788695456184c7337c365cfe143dad3cf7ad36392016"
+  }
+}
