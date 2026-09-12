@@ -1,0 +1,234 @@
+{
+  "$schema": "https://raw.githubusercontent.com/mkroplewski/kil/main/schemas/kil-v2.schema.json",
+  "format_version": 2,
+  "project": {
+    "name": "multi-sheet-divider",
+    "title": "Four-layer routing and planes"
+  },
+  "pcb": {
+    "outline": [
+      [
+        0,
+        0
+      ],
+      [
+        12,
+        0
+      ],
+      [
+        12,
+        14
+      ],
+      [
+        0,
+        14
+      ]
+    ],
+    "placement": {
+      "R1": {
+        "at": [
+          5,
+          5
+        ],
+        "mode": "fixed"
+      },
+      "R2": {
+        "at": {
+          "part": "R1",
+          "offset": [
+            0,
+            4
+          ]
+        },
+        "mode": "fixed"
+      }
+    },
+    "routes": {
+      "SIGNAL": [
+        {
+          "path": [
+            {
+              "pad": "R1.1"
+            },
+            [
+              3,
+              5
+            ]
+          ],
+          "locked": true
+        },
+        {
+          "layer": "In1.Cu",
+          "path": [
+            [
+              3,
+              5
+            ],
+            [
+              3,
+              9
+            ]
+          ],
+          "locked": true
+        },
+        {
+          "path": [
+            [
+              3,
+              9
+            ],
+            {
+              "pad": "R2.1"
+            }
+          ],
+          "locked": true
+        }
+      ],
+      "GND": [
+        {
+          "path": [
+            {
+              "pad": "R1.2"
+            },
+            {
+              "pad": "R2.2"
+            }
+          ],
+          "locked": true
+        }
+      ]
+    },
+    "vias": [
+      {
+        "net": "GND",
+        "at": [
+          5.825,
+          7
+        ]
+      },
+      {
+        "net": "SIGNAL",
+        "at": [
+          3,
+          5
+        ],
+        "locked": true
+      },
+      {
+        "net": "SIGNAL",
+        "at": [
+          3,
+          9
+        ],
+        "locked": true
+      }
+    ],
+    "zones": [
+      {
+        "net": "GND",
+        "layer": "In2.Cu",
+        "outline": [
+          [
+            0.5,
+            0.5
+          ],
+          [
+            11.5,
+            0.5
+          ],
+          [
+            11.5,
+            13.5
+          ],
+          [
+            0.5,
+            13.5
+          ]
+        ],
+        "solid": true,
+        "priority": 1
+      }
+    ],
+    "holes": [
+      {
+        "at": [
+          10,
+          12
+        ],
+        "diameter": 2.5
+      }
+    ],
+    "silk": [],
+    "constraints": {
+      "resistor-spacing": {
+        "from": {
+          "part": "R1"
+        },
+        "to": {
+          "part": "R2"
+        },
+        "max": 5
+      }
+    },
+    "stackup": {
+      "layers": 4
+    }
+  },
+  "circuit": {
+    "parts": {
+      "R1": {
+        "symbol": "Device:R",
+        "value": "10k",
+        "footprint": "Resistor_SMD:R_0603_1608Metric",
+        "reference_prefix": "R",
+        "reference": "R1"
+      },
+      "R2": {
+        "symbol": "Device:R",
+        "value": "20k",
+        "footprint": "Resistor_SMD:R_0603_1608Metric",
+        "reference_prefix": "R",
+        "reference": "R2"
+      }
+    },
+    "nets": {
+      "SIGNAL": [
+        "R1.1",
+        "R2.1"
+      ],
+      "GND": [
+        "R1.2",
+        "R2.2"
+      ]
+    },
+    "unconnected": []
+  },
+  "schematic": {
+    "sheets": {
+      "r1": {
+        "symbols": {
+          "R1": {
+            "at": [
+              50.8,
+              50.8
+            ],
+            "part": "R1",
+            "unit": 1
+          }
+        }
+      },
+      "r2": {
+        "symbols": {
+          "R2": {
+            "at": [
+              63.5,
+              50.8
+            ],
+            "part": "R2",
+            "unit": 1
+          }
+        }
+      }
+    }
+  }
+}

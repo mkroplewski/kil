@@ -14,6 +14,13 @@ pub fn validate_basic(project: &ResolvedProject, file: &Path, source: &str) -> V
         out.push(d);
     };
 
+    let copper_layers = project.pcb.stackup.copper_layers();
+    if let Err(message) = project.pcb.stackup.validate() {
+        push(
+            Diagnostic::error("PCB020", message, file),
+            "/pcb/stackup".into(),
+        );
+    }
     if project.format_version != 2 {
         push(
             Diagnostic::error(
@@ -112,6 +119,42 @@ pub fn validate_basic(project: &ResolvedProject, file: &Path, source: &str) -> V
         }
     }
 
+    let mut power_sources = BTreeSet::new();
+    for endpoint in &project.power_sources {
+        if !power_sources.insert(endpoint)
+            || !project.nets.values().any(|pins| pins.contains(endpoint))
+        {
+            push(
+                Diagnostic::error(
+                    "NET010",
+                    format!(
+                        "power source '{endpoint}' must name a connected terminal exactly once"
+                    ),
+                    file,
+                ),
+                "/circuit/power_sources".into(),
+            );
+        }
+    }
+    for (index, area) in project.pcb.keepouts.iter().enumerate() {
+        if area.outline.len() < 3
+            || area
+                .outline
+                .iter()
+                .any(|p| !point_in_polygon(*p, &project.pcb.outline))
+            || area.layers.iter().collect::<BTreeSet<_>>().len() != area.layers.len()
+            || area.layers.iter().any(|l| !copper_layers.contains(l))
+        {
+            push(
+                Diagnostic::error(
+                    "PCB022",
+                    "keepout must be a board-contained polygon on declared copper layers",
+                    file,
+                ),
+                format!("/pcb/keepouts/{index}"),
+            );
+        }
+    }
     for reference in project.components.keys() {
         if !project
             .schematic
@@ -198,7 +241,7 @@ pub fn validate_basic(project: &ResolvedProject, file: &Path, source: &str) -> V
                     format!("{path}/width"),
                 );
             }
-            if route.layer != "F.Cu" && route.layer != "B.Cu" {
+            if !copper_layers.contains(&route.layer) {
                 push(
                     Diagnostic::error(
                         "PCB007",
@@ -253,13 +296,27 @@ pub fn validate_basic(project: &ResolvedProject, file: &Path, source: &str) -> V
                 path.clone(),
             );
         }
+        if [zone.clearance, zone.thermal_gap, zone.thermal_width]
+            .into_iter()
+            .flatten()
+            .any(|n| !n.is_finite() || n <= 0.0)
+        {
+            push(
+                Diagnostic::error(
+                    "PCB021",
+                    "zone clearances and thermal dimensions must be positive",
+                    file,
+                ),
+                path.clone(),
+            );
+        }
         if zone.outline.len() < 3 {
             push(
                 Diagnostic::error("PCB012", "zone needs at least three points", file),
                 format!("{path}/outline"),
             );
         }
-        if zone.layer != "F.Cu" && zone.layer != "B.Cu" {
+        if !copper_layers.contains(&zone.layer) {
             push(
                 Diagnostic::error(
                     "PCB015",
@@ -344,11 +401,10 @@ pub fn validate_basic(project: &ResolvedProject, file: &Path, source: &str) -> V
             || class.minimum_track_width < project.rules.minimum_track_width
             || class.preferred_track_width < class.minimum_track_width
             || class.clearance < project.rules.clearance
-            || class.allowed_layers.is_empty()
             || class
                 .allowed_layers
                 .iter()
-                .any(|l| l != "F.Cu" && l != "B.Cu")
+                .any(|l| !copper_layers.contains(l))
         {
             push(
                 Diagnostic::error(
@@ -377,12 +433,16 @@ pub fn validate_basic(project: &ResolvedProject, file: &Path, source: &str) -> V
             let class = project.rules.class(net);
             let min = class.map_or(project.rules.minimum_track_width, |c| c.minimum_track_width);
             if route.width.unwrap_or(project.rules.width(net)) < min
-                || class.is_some_and(|c| !c.allowed_layers.contains(&route.layer))
+                || class.is_some_and(|c| !c.allows(&route.layer))
             {
                 push(
                     Diagnostic::error(
                         "RULE005",
-                        format!("route on '{net}' violates width or allowed layer requirements"),
+                        format!(
+                            "route on '{net}' has width {} on {}; minimum width is {min} and the layer must be allowed by its net class",
+                            route.width.unwrap_or(project.rules.width(net)),
+                            route.layer
+                        ),
                         file,
                     ),
                     format!("/pcb/routes/{net}"),
@@ -391,10 +451,11 @@ pub fn validate_basic(project: &ResolvedProject, file: &Path, source: &str) -> V
         }
     }
     for via in &project.pcb.vias {
-        if project.rules.class(&via.net).is_some_and(|c| {
-            !c.allowed_layers.iter().any(|l| l == "F.Cu")
-                || !c.allowed_layers.iter().any(|l| l == "B.Cu")
-        }) {
+        if project
+            .rules
+            .class(&via.net)
+            .is_some_and(|c| copper_layers.iter().any(|l| !c.allows(l)))
+        {
             push(
                 Diagnostic::error(
                     "RULE005",
@@ -409,7 +470,7 @@ pub fn validate_basic(project: &ResolvedProject, file: &Path, source: &str) -> V
         if project
             .rules
             .class(&zone.net)
-            .is_some_and(|c| !c.allowed_layers.contains(&zone.layer))
+            .is_some_and(|c| !c.allows(&zone.layer))
         {
             push(
                 Diagnostic::error(
@@ -644,6 +705,19 @@ fn cross(a: Point, b: Point, p: Point) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keepouts_and_external_power_require_valid_board_and_circuit_targets() {
+        let (mut project, _) = crate::kicad::tests::fixture();
+        project.power_sources.push("missing.1".into());
+        project.pcb.keepouts.push(crate::model::Keepout {
+            outline: vec![[0., 0.], [1., 0.], [1., 1.]],
+            layers: vec!["In7.Cu".into()],
+        });
+        let diagnostics = validate_basic(&project, Path::new("test.json"), "");
+        assert!(diagnostics.iter().any(|d| d.code == "NET010"));
+        assert!(diagnostics.iter().any(|d| d.code == "PCB022"));
+    }
 
     #[test]
     fn net_classes_reject_thin_tracks_and_forbidden_layers() {

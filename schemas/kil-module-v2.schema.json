@@ -64,6 +64,14 @@
           "default": {},
           "type": "object"
         },
+        "power_sources": {
+          "default": [],
+          "description": "Connector terminals that provide external power, including its return.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "unconnected": {
           "default": [],
           "items": {
@@ -72,6 +80,44 @@
           "type": "array"
         }
       },
+      "type": "object"
+    },
+    "Dielectric": {
+      "additionalProperties": false,
+      "properties": {
+        "epsilon_r": {
+          "anyOf": [
+            {
+              "default": 4.5,
+              "format": "double",
+              "type": "number"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        },
+        "material": {
+          "default": "FR4",
+          "type": "string"
+        },
+        "thickness": {
+          "anyOf": [
+            {
+              "format": "double",
+              "type": "number"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "thickness"
+      ],
       "type": "object"
     },
     "DistanceConstraint": {
@@ -260,6 +306,44 @@
       ],
       "type": "object"
     },
+    "Keepout": {
+      "additionalProperties": false,
+      "description": "A region reserved from copper and component placement on the selected layers.",
+      "properties": {
+        "layers": {
+          "default": [],
+          "description": "Empty means all copper layers.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "outline": {
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "format": "double",
+                  "type": "number"
+                },
+                {
+                  "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+                  "type": "string"
+                }
+              ]
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "outline"
+      ],
+      "type": "object"
+    },
     "PadAnchor": {
       "additionalProperties": false,
       "properties": {
@@ -380,6 +464,13 @@
           },
           "type": "array"
         },
+        "keepouts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Keepout"
+          },
+          "type": "array"
+        },
         "outline": {
           "default": [],
           "items": {
@@ -424,6 +515,17 @@
             "$ref": "#/$defs/SilkText"
           },
           "type": "array"
+        },
+        "stackup": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Stackup"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "vias": {
           "default": [],
@@ -597,6 +699,33 @@
       ],
       "type": "object"
     },
+    "SchematicPage": {
+      "additionalProperties": false,
+      "properties": {
+        "labels": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SchematicLabel"
+          },
+          "type": "array"
+        },
+        "symbols": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SchematicPlacement"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "wires": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SchematicWire"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "SchematicPlacement": {
       "additionalProperties": false,
       "properties": {
@@ -663,6 +792,14 @@
             "$ref": "#/$defs/SchematicLabel"
           },
           "type": "array"
+        },
+        "sheets": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SchematicPage"
+          },
+          "default": {},
+          "description": "Optional named pages. Circuit connectivity does not depend on page organization.",
+          "type": "object"
         },
         "symbols": {
           "additionalProperties": {
@@ -759,6 +896,63 @@
         "text",
         "at"
       ],
+      "type": "object"
+    },
+    "Stackup": {
+      "additionalProperties": false,
+      "properties": {
+        "copper_thickness": {
+          "anyOf": [
+            {
+              "default": 0.035,
+              "description": "Uniform copper thickness in mm.",
+              "format": "double",
+              "type": "number"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        },
+        "dielectrics": {
+          "default": [],
+          "description": "Optional fabrication specification, in order between adjacent copper layers.",
+          "items": {
+            "$ref": "#/$defs/Dielectric"
+          },
+          "type": "array"
+        },
+        "layers": {
+          "anyOf": [
+            {
+              "default": 2,
+              "description": "Even copper layer count. Inner layers are named In1.Cu, In2.Cu, and so on.",
+              "format": "uint8",
+              "maximum": 32,
+              "minimum": 2,
+              "type": "integer"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        },
+        "thickness": {
+          "anyOf": [
+            {
+              "default": 1.6,
+              "format": "double",
+              "type": "number"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        }
+      },
       "type": "object"
     },
     "Transform": {
@@ -896,6 +1090,48 @@
             "type": "array"
           },
           "type": "array"
+        },
+        "priority": {
+          "anyOf": [
+            {
+              "default": 0,
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        },
+        "solid": {
+          "anyOf": [
+            {
+              "default": false,
+              "type": "boolean"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        },
+        "thermal_gap": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "thermal_width": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
         }
       },
       "required": [
@@ -922,6 +1158,7 @@
         "instances": {},
         "nets": {},
         "parts": {},
+        "power_sources": [],
         "unconnected": []
       }
     },
@@ -946,10 +1183,12 @@
       "default": {
         "constraints": {},
         "holes": [],
+        "keepouts": [],
         "outline": [],
         "placement": {},
         "routes": {},
         "silk": [],
+        "stackup": null,
         "vias": [],
         "zones": []
       }
@@ -965,6 +1204,7 @@
       "$ref": "#/$defs/SchematicView",
       "default": {
         "labels": [],
+        "sheets": {},
         "symbols": {},
         "wires": []
       }

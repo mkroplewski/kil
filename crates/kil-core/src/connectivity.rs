@@ -72,7 +72,9 @@ pub fn verify(project: &ResolvedProject, netlist: &str) -> Result<(), String> {
     }
     for (name, endpoints) in &project.nets {
         let expected: BTreeSet<_> = endpoints.iter().cloned().collect();
-        let exported = actual.remove(name).unwrap_or_default();
+        // KiCad escapes slashes inside net labels to distinguish them from sheet paths.
+        let exported_name = name.replace('/', "{slash}");
+        let exported = actual.remove(&exported_name).unwrap_or_default();
         if expected != exported {
             return Err(format!(
                 "net '{name}' differs from circuit intent: expected {expected:?}, exported {exported:?}"
@@ -92,6 +94,24 @@ pub fn verify(project: &ResolvedProject, netlist: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn module_private_nets_match_kicad_escaped_names() {
+        let (mut project, _) = crate::kicad::tests::fixture();
+        project.nets.clear();
+        project.nets.insert(
+            "channel/internal".into(),
+            vec!["R1.1".into(), "R2.1".into()],
+        );
+        let netlist = r#"(export (nets (net (name "channel{slash}internal") (node (ref "R1") (pin "1")) (node (ref "R2") (pin "1")))))"#;
+        assert!(verify(&project, netlist).is_ok());
+        assert!(
+            verify(
+                &project,
+                &netlist.replace("channel{slash}internal", "other")
+            )
+            .is_err()
+        );
+    }
     #[test]
     fn detects_missing_endpoints_and_unintended_geometric_shorts() {
         let (mut project, _) = crate::kicad::tests::fixture();

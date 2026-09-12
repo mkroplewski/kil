@@ -33,11 +33,17 @@ fn checks_repeated_modules_and_detects_schematic_short() {
     other["schematic"]["at"] = serde_json::json!([100.33, 50.8]);
     root["circuit"]["instances"]["other"] = other;
     root["pcb"]["outline"] = serde_json::json!([[0, 0], [30, 0], [30, 14], [0, 14]]);
-    fs::write(
-        dir.path().join("module.json"),
-        include_str!("../../../examples/modular-resistors/blocks/divider.kil.json"),
-    )
+    let mut module: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../examples/modular-resistors/blocks/divider.kil.json"
+    ))
     .unwrap();
+    let symbols = module["schematic"]
+        .as_object_mut()
+        .unwrap()
+        .remove("symbols")
+        .unwrap();
+    module["schematic"]["sheets"] = serde_json::json!({"divider": {"symbols": symbols}});
+    fs::write(dir.path().join("module.json"), module.to_string()).unwrap();
     fs::write(&input, root.to_string()).unwrap();
     lock(&input);
     let options = BuildOptions {
@@ -82,11 +88,14 @@ fn checks_repeated_modules_and_detects_schematic_short() {
 fn routes_two_groups_preserves_copper_and_builds_cache() {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("project.kil.json");
-    fs::write(
-        &input,
-        include_str!("../../../examples/routed-divider.kil.json"),
-    )
-    .unwrap();
+    let mut source: serde_json::Value =
+        serde_json::from_str(include_str!("../../../examples/routed-divider.kil.json")).unwrap();
+    source["pcb"]["stackup"] = serde_json::json!({"layers":4});
+    source["rules"]["net_classes"]["signal"]
+        .as_object_mut()
+        .unwrap()
+        .remove("allowed_layers");
+    fs::write(&input, source.to_string()).unwrap();
     lock(&input);
     let mut options = RouteOptions {
         input: input.clone(),
@@ -178,4 +187,184 @@ fn pad_anchors_match_back_side_rotated_footprints() {
         kicad_cli: Some(cli()),
     });
     assert_eq!(result.exit, ExitClass::Success, "{:?}", result.diagnostics);
+}
+
+#[test]
+#[ignore = "requires KiCad 10; set KIL_KICAD_CLI"]
+fn four_layer_board_preserves_inner_copper_and_planes() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("project.kil.json");
+    fs::write(
+        &input,
+        include_str!("../../../examples/four-layer-divider.kil.json"),
+    )
+    .unwrap();
+    lock(&input);
+    let output = dir.path().join("output");
+    let result = kil_core::build(&BuildOptions {
+        input: input.clone(),
+        output: Some(output.clone()),
+        kicad_cli: Some(cli()),
+    });
+    assert_eq!(result.exit, ExitClass::Success, "{:?}", result.diagnostics);
+    let board = output.join("four-layer-divider.kicad_pcb");
+    let doc = kiutils_kicad::PcbFile::read(&board).unwrap();
+    assert!(
+        doc.ast()
+            .segments
+            .iter()
+            .any(|s| s.layer.as_deref() == Some("In1.Cu"))
+    );
+    assert!(
+        doc.ast()
+            .zones
+            .iter()
+            .any(|z| z.layer.as_deref() == Some("In2.Cu"))
+    );
+    let loaded = kil_core::load_project(&input);
+    let cache =
+        kil_core::routing::extract_route_cache(&loaded.project.unwrap(), &board, None).unwrap();
+    assert!(cache.routes["SIGNAL"].iter().any(|r| r.layer == "In1.Cu"));
+    assert_eq!(cache.vias.len(), 3);
+}
+
+#[test]
+#[ignore = "requires KiCad 10; set KIL_KICAD_CLI"]
+fn multi_sheet_connectivity_and_removed_sheet_publication() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("project.kil.json");
+    let mut source: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../examples/multi-sheet-divider.kil.json"
+    ))
+    .unwrap();
+    fs::write(&input, source.to_string()).unwrap();
+    lock(&input);
+    let output = dir.path().join("output");
+    let options = BuildOptions {
+        input: input.clone(),
+        output: Some(output.clone()),
+        kicad_cli: Some(cli()),
+    };
+    let result = kil_core::build(&options);
+    assert_eq!(result.exit, ExitClass::Success, "{:?}", result.diagnostics);
+    let sheets = output.join("multi-sheet-divider.sheets");
+    assert_eq!(fs::read_dir(&sheets).unwrap().count(), 2);
+    let pages = source["schematic"]
+        .as_object_mut()
+        .unwrap()
+        .remove("sheets")
+        .unwrap();
+    let mut symbols = serde_json::Map::new();
+    for page in pages.as_object().unwrap().values() {
+        symbols.extend(page["symbols"].as_object().unwrap().clone());
+    }
+    source["schematic"]["symbols"] = symbols.into();
+    fs::write(&input, source.to_string()).unwrap();
+    let result = kil_core::build(&options);
+    assert_eq!(result.exit, ExitClass::Success, "{:?}", result.diagnostics);
+    assert_eq!(fs::read_dir(&sheets).unwrap().count(), 0);
+}
+
+#[test]
+#[ignore = "requires KiCad 10; set KIL_KICAD_CLI"]
+fn power_sources_preserve_nets_and_keepouts_are_enforced() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("project.kil.json");
+    let mut source: serde_json::Value =
+        serde_json::from_str(include_str!("../../../examples/anchored-divider.kil.json")).unwrap();
+    source["circuit"]["power_sources"] = serde_json::json!(["R1.1", "R1.2"]);
+    source["pcb"]["keepouts"] =
+        serde_json::json!([{"outline":[[0.1,0.1],[0.4,0.1],[0.4,0.4],[0.1,0.4]]}]);
+    fs::write(&input, source.to_string()).unwrap();
+    lock(&input);
+    let options = BuildOptions {
+        input: input.clone(),
+        output: None,
+        kicad_cli: Some(cli()),
+    };
+    let result = kil_core::check(&options);
+    assert_eq!(result.exit, ExitClass::Success, "{:?}", result.diagnostics);
+    source["pcb"]["keepouts"][0]["outline"] = serde_json::json!([[4, 4], [6, 4], [6, 10], [4, 10]]);
+    fs::write(&input, source.to_string()).unwrap();
+    let result = kil_core::check(&options);
+    assert_ne!(result.exit, ExitClass::Invalid, "{:?}", result.diagnostics);
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "DRC" && d.severity == kil_core::Severity::Error)
+    );
+}
+
+#[test]
+#[ignore = "requires KiCad 10; set KIL_KICAD_CLI"]
+fn mixed_io_reference_preserves_all_module_connectivity() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("project.kil.json");
+    fs::create_dir(dir.path().join("blocks")).unwrap();
+    for (name, text) in [
+        (
+            "project.kil.json",
+            include_str!("../../../examples/mixed-io/project.kil.json"),
+        ),
+        (
+            "blocks/analog.kil.json",
+            include_str!("../../../examples/mixed-io/blocks/analog.kil.json"),
+        ),
+        (
+            "blocks/digital.kil.json",
+            include_str!("../../../examples/mixed-io/blocks/digital.kil.json"),
+        ),
+    ] {
+        fs::write(dir.path().join(name), text).unwrap();
+    }
+    let mut source: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&input).unwrap()).unwrap();
+    source["build"] = serde_json::json!({});
+    fs::write(&input, source.to_string()).unwrap();
+    let loaded = kil_core::load_project(&input);
+    assert!(loaded.diagnostics.is_empty(), "{:?}", loaded.diagnostics);
+    let project = loaded.project.unwrap();
+    assert_eq!(project.components.len(), 203);
+    assert_eq!(project.schematic.sheets.len(), 24);
+    lock(&input);
+    let started = std::time::Instant::now();
+    let result = kil_core::build(&BuildOptions {
+        input,
+        output: Some(dir.path().join("output")),
+        kicad_cli: Some(cli()),
+    });
+    assert_eq!(
+        result.exit,
+        ExitClass::DesignViolations,
+        "{:?}",
+        result.diagnostics
+    );
+    // This source fixture has no route cache. Every electrical error must be a PCB airwire.
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .filter(|d| d.severity == kil_core::Severity::Error)
+            .all(|d| d.code == "DRC" && d.message.contains("unconnected")),
+        "{:?}",
+        result.diagnostics
+    );
+    assert!(
+        !result.diagnostics.iter().any(|d| d.code == "ERC"),
+        "{:?}",
+        result.diagnostics
+    );
+    let output = result.output_dir.unwrap();
+    assert_eq!(
+        fs::read_dir(output.join("mixed-io.sheets"))
+            .unwrap()
+            .count(),
+        24
+    );
+    eprintln!(
+        "203 parts, 24 child sheets, {} nets: generated and checked in {:?}",
+        project.nets.len(),
+        started.elapsed()
+    );
 }

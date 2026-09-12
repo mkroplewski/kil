@@ -23,6 +23,8 @@ pub enum Units {
 #[serde(deny_unknown_fields)]
 pub struct ResolvedProject {
     #[serde(default)]
+    pub power_sources: Vec<String>,
+    #[serde(default)]
     pub library_fingerprint: String,
     #[serde(rename = "$schema", default, skip_serializing)]
     #[schemars(with = "String")]
@@ -91,6 +93,8 @@ pub struct Component {
 #[serde(deny_unknown_fields)]
 pub struct Schematic {
     #[serde(default)]
+    pub sheets: std::collections::BTreeSet<String>,
+    #[serde(default)]
     pub placement: IndexMap<String, SchematicPlacement>,
     #[serde(default)]
     pub wires: Vec<SchematicWire>,
@@ -103,6 +107,9 @@ pub struct Schematic {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SchematicPlacement {
+    /// Resolved page identity, assigned by the enclosing source page.
+    #[serde(skip)]
+    pub sheet: String,
     pub part: String,
     pub unit: u32,
     pub at: Point,
@@ -113,6 +120,9 @@ pub struct SchematicPlacement {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SchematicWire {
+    /// Resolved page identity, assigned by the enclosing source page.
+    #[serde(skip)]
+    pub sheet: String,
     pub net: String,
     pub path: Vec<Point>,
 }
@@ -120,6 +130,9 @@ pub struct SchematicWire {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SchematicLabel {
+    /// Resolved page identity, assigned by the enclosing source page.
+    #[serde(skip)]
+    pub sheet: String,
     pub net: String,
     pub at: Point,
     #[serde(default)]
@@ -129,6 +142,10 @@ pub struct SchematicLabel {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Pcb {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keepouts: Vec<Keepout>,
+    #[serde(default)]
+    pub stackup: crate::stackup::Stackup,
     pub outline: Vec<Point>,
     pub placement: IndexMap<String, PcbPlacement>,
     #[serde(default)]
@@ -239,6 +256,14 @@ pub struct Via {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Zone {
+    #[serde(default)]
+    pub priority: u32,
+    #[serde(default)]
+    pub solid: bool,
+    #[serde(default)]
+    pub thermal_gap: Option<f64>,
+    #[serde(default)]
+    pub thermal_width: Option<f64>,
     pub net: String,
     #[serde(default = "default_front_copper")]
     pub layer: String,
@@ -315,9 +340,6 @@ fn default_via_drill() -> f64 {
 fn default_min_width() -> f64 {
     0.15
 }
-fn copper_layers() -> Vec<String> {
-    vec!["F.Cu".into(), "B.Cu".into()]
-}
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NetClass {
@@ -325,8 +347,13 @@ pub struct NetClass {
     pub clearance: f64,
     pub minimum_track_width: f64,
     pub preferred_track_width: f64,
-    #[serde(default = "copper_layers")]
+    #[serde(default)]
     pub allowed_layers: Vec<String>,
+}
+impl NetClass {
+    pub fn allows(&self, layer: &str) -> bool {
+        self.allowed_layers.is_empty() || self.allowed_layers.iter().any(|l| l == layer)
+    }
 }
 impl Rules {
     pub fn class(&self, net: &str) -> Option<&NetClass> {
@@ -347,4 +374,14 @@ pub(crate) fn valid_net_class_name(name: &str) -> bool {
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+/// A region reserved from copper and component placement on the selected layers.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Keepout {
+    pub outline: Vec<Point>,
+    /// Empty means all copper layers.
+    #[serde(default)]
+    pub layers: Vec<String>,
 }

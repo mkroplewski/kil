@@ -24,6 +24,9 @@ pub struct Project {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Circuit {
+    /// Connector terminals that provide external power, including its return.
+    #[serde(default)]
+    pub power_sources: Vec<String>,
     #[serde(default)]
     pub parts: IndexMap<String, Part>,
     #[serde(default)]
@@ -52,6 +55,19 @@ pub struct Part {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SchematicView {
+    /// Optional named pages. Circuit connectivity does not depend on page organization.
+    #[serde(default)]
+    pub sheets: IndexMap<String, SchematicPage>,
+    #[serde(default)]
+    pub symbols: IndexMap<String, SchematicPlacement>,
+    #[serde(default)]
+    pub wires: Vec<SchematicWire>,
+    #[serde(default)]
+    pub labels: Vec<SchematicLabel>,
+}
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SchematicPage {
     #[serde(default)]
     pub symbols: IndexMap<String, SchematicPlacement>,
     #[serde(default)]
@@ -110,6 +126,10 @@ pub struct Instance {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PcbDesign {
+    #[serde(default)]
+    pub keepouts: Vec<Keepout>,
+    #[serde(default)]
+    pub stackup: Option<crate::stackup::Stackup>,
     #[serde(default)]
     pub outline: Vec<Point>,
     #[serde(default)]

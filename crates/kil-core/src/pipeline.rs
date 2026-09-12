@@ -230,6 +230,7 @@ pub fn inspect(options: &InspectOptions) -> InspectOutcome {
                 "ref": refdes,
                 "component": component,
                 "nets": nets,
+                "sheets": project.schematic.placement.values().filter(|p|p.part==*refdes).map(|p|p.sheet.as_str()).collect::<Vec<_>>(),
                 "schematic": project.schematic.placement.iter().filter(|(_,p)|p.part==*refdes).collect::<IndexMap<_,_>>(),
                 "origin": loaded.origins.get(refdes),
                 "geometry_stage": "preliminary",
@@ -543,12 +544,30 @@ pub fn route(options: &RouteOptions) -> RouteOutcome {
             return invalid_route(diagnostics, loaded.source);
         }
     };
+    let fabrication_limits = staging.path().join("kil-fabrication-limits.txt");
+    if let Err(e) = fs::write(
+        &fabrication_limits,
+        format!(
+            "track_width = {}\nclearance = {}\nvia_diameter = {}\nvia_drill = {}\n",
+            project.rules.minimum_track_width,
+            project.rules.clearance,
+            project.rules.via_size,
+            project.rules.via_drill
+        ),
+    ) {
+        diagnostics.push(Diagnostic::error("ROUTE022", e.to_string(), &options.input));
+        return invalid_route(diagnostics, loaded.source);
+    }
     let mut command = Command::new(&python);
     command.arg(&router).arg(&input_board).arg(&routed_board);
     if !selected_nets.is_empty() {
         command.arg("--nets").args(&selected_nets);
     }
+    command
+        .arg("--layers")
+        .args(project.pcb.stackup.copper_layers());
     command.args(&policy.extra_args);
+    command.arg("--fab-overrides").arg(&fabrication_limits);
     let result = match command.output() {
         Ok(result) => result,
         Err(err) => {
@@ -1094,6 +1113,7 @@ fn publish_atomically(staging: &Path, output: &Path, name: &str) -> std::io::Res
         format!("{name}.kicad_dru"),
         format!("{name}.kicad_sch"),
         format!("{name}.kicad_pcb"),
+        format!("{name}.sheets"),
     ];
     let mut moved_old = Vec::new();
     let mut moved_new = Vec::new();
@@ -1113,7 +1133,12 @@ fn publish_atomically(staging: &Path, output: &Path, name: &str) -> std::io::Res
     })();
     if let Err(err) = operation {
         for filename in moved_new.into_iter().rev() {
-            let _ = fs::remove_file(output.join(filename));
+            let path = output.join(filename);
+            if path.is_dir() {
+                let _ = fs::remove_dir_all(path);
+            } else {
+                let _ = fs::remove_file(path);
+            }
         }
         for filename in moved_old.into_iter().rev() {
             let _ = fs::rename(backup.join(&filename), output.join(filename));
@@ -1406,6 +1431,29 @@ mod tests {
         assert_eq!(project.pcb.routes["SIGNAL"][0].path[0], [4.175, 5.0]);
         assert!(project.pcb.routes["SIGNAL"][0].locked);
         assert_eq!(loaded.blocks["divider"].nets.len(), 2);
+    }
+
+    #[test]
+    fn sheet_directory_rolls_back_with_the_other_artifacts() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("output");
+        let staging = dir.path().join("staging");
+        fs::create_dir_all(output.join("demo.sheets")).unwrap();
+        fs::create_dir(&staging).unwrap();
+        fs::write(output.join("demo.sheets/old.kicad_sch"), "old sheet").unwrap();
+        for extension in ["kicad_pro", "kicad_dru", "kicad_sch", "kicad_pcb"] {
+            fs::write(output.join(format!("demo.{extension}")), "old").unwrap();
+            fs::write(staging.join(format!("demo.{extension}")), "new").unwrap();
+        }
+        assert!(publish_atomically(&staging, &output, "demo").is_err());
+        assert_eq!(
+            fs::read_to_string(output.join("demo.sheets/old.kicad_sch")).unwrap(),
+            "old sheet"
+        );
+        assert_eq!(
+            fs::read_to_string(output.join("demo.kicad_sch")).unwrap(),
+            "old"
+        );
     }
 
     #[test]

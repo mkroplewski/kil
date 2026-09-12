@@ -17,6 +17,7 @@ pub struct GeneratedProject {
     pub design_rules: String,
     pub project: String,
     pub schematic: String,
+    pub sheets: IndexMap<String, String>,
     pub pcb: String,
 }
 
@@ -33,7 +34,18 @@ impl GeneratedProject {
         fs::write(&project_path, &self.project)?;
         fs::write(&schematic_path, &self.schematic)?;
         fs::write(&pcb_path, &self.pcb)?;
-        Ok(vec![project_path, schematic_path, pcb_path])
+        let sheets_dir = directory.join(format!("{name}.sheets"));
+        if sheets_dir.exists() {
+            fs::remove_dir_all(&sheets_dir)?;
+        }
+        fs::create_dir(&sheets_dir)?;
+        let mut paths = vec![project_path, schematic_path, pcb_path];
+        for (filename, text) in &self.sheets {
+            let path = sheets_dir.join(filename);
+            fs::write(&path, text)?;
+            paths.push(path);
+        }
+        Ok(paths)
     }
 }
 
@@ -42,6 +54,11 @@ pub fn generate(
     project: &ResolvedProject,
     libraries: &ResolvedLibraries,
 ) -> std::io::Result<GeneratedProject> {
+    project
+        .pcb
+        .stackup
+        .validate()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
     for name in project.rules.net_classes.keys() {
         if !crate::model::valid_net_class_name(name) {
             return Err(std::io::Error::new(
@@ -50,11 +67,32 @@ pub fn generate(
             ));
         }
     }
-    let schematic_node = schematic_node(project, libraries);
+    if !project.power_sources.is_empty() && libraries.power_flag.is_none() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "missing power:PWR_FLAG library asset",
+        ));
+    }
+    let root_schematic = schematic_node(project, libraries, "");
+    let sheets = project
+        .schematic
+        .sheets
+        .iter()
+        .map(|sheet| {
+            (
+                sheet_filename(project, sheet),
+                CstDocument {
+                    raw: String::new(),
+                    nodes: vec![schematic_node(project, libraries, sheet)],
+                }
+                .to_canonical_string(),
+            )
+        })
+        .collect();
     let pcb_node = pcb_node(project, libraries);
     let schematic = CstDocument {
         raw: String::new(),
-        nodes: vec![schematic_node],
+        nodes: vec![root_schematic],
     }
     .to_canonical_string();
     let pcb = CstDocument {
@@ -64,6 +102,7 @@ pub fn generate(
     .to_canonical_string();
     let project_json = project_json(project);
     Ok(GeneratedProject {
+        sheets,
         design_rules: design_rules(project),
         project: project_json,
         schematic,
@@ -77,8 +116,19 @@ pub fn validate_generated(directory: &Path, name: &str) -> Result<(), String> {
     let sch_doc = SchematicFile::read(&sch)
         .map_err(|err| format!("generated schematic is invalid: {err}"))?;
     let pcb_doc = PcbFile::read(&pcb).map_err(|err| format!("generated PCB is invalid: {err}"))?;
-    if sch_doc.ast().symbol_count == 0 && sch_doc.ast().lib_symbol_count > 0 {
+    if sch_doc.ast().symbol_count == 0
+        && sch_doc.ast().sheet_count == 0
+        && sch_doc.ast().lib_symbol_count > 0
+    {
         return Err("generated schematic contains libraries but no placed symbols".into());
+    }
+    let sheets = directory.join(format!("{name}.sheets"));
+    if sheets.exists() {
+        for entry in fs::read_dir(&sheets).map_err(|e| e.to_string())? {
+            let path = entry.map_err(|e| e.to_string())?.path();
+            SchematicFile::read(&path)
+                .map_err(|e| format!("invalid child schematic '{}': {e}", path.display()))?;
+        }
     }
     if pcb_doc.ast().footprint_count == 0 && pcb_doc.ast().net_count > 1 {
         return Err("generated PCB contains nets but no footprints".into());
@@ -86,8 +136,23 @@ pub fn validate_generated(directory: &Path, name: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn schematic_node(project: &ResolvedProject, libraries: &ResolvedLibraries) -> Node {
+fn schematic_node(full: &ResolvedProject, libraries: &ResolvedLibraries, sheet: &str) -> Node {
+    let mut page = full.clone();
+    page.schematic.placement.retain(|_, p| p.sheet == sheet);
+    page.schematic.wires.retain(|p| p.sheet == sheet);
+    page.schematic.labels.retain(|p| p.sheet == sheet);
+    let project = &page;
     let root_uuid = stable_uuid(project, "schematic/root");
+    let page_uuid = if sheet.is_empty() {
+        root_uuid
+    } else {
+        stable_uuid(project, &format!("schematic/file/{sheet}"))
+    };
+    let instance_path = if sheet.is_empty() {
+        format!("/{root_uuid}")
+    } else {
+        format!("/{root_uuid}/{}", sheet_uuid(project, sheet))
+    };
     let mut root = vec![
         sym("kicad_sch"),
         list(vec![sym("version"), sym("20250114")]),
@@ -96,8 +161,15 @@ fn schematic_node(project: &ResolvedProject, libraries: &ResolvedLibraries) -> N
             sym("generator_version"),
             quoted(env!("CARGO_PKG_VERSION")),
         ]),
-        list(vec![sym("uuid"), quoted(root_uuid.to_string())]),
-        list(vec![sym("paper"), quoted("A4")]),
+        list(vec![sym("uuid"), quoted(page_uuid.to_string())]),
+        list(vec![
+            sym("paper"),
+            quoted(if project.schematic.sheets.len() > 8 && sheet.is_empty() {
+                "A3"
+            } else {
+                "A4"
+            }),
+        ]),
     ];
 
     let mut embedded = vec![sym("lib_symbols")];
@@ -108,6 +180,14 @@ fn schematic_node(project: &ResolvedProject, libraries: &ResolvedLibraries) -> N
             set_second_quoted(&mut node, &resolved.symbol_id);
             node
         });
+    }
+    if !project.power_sources.is_empty() {
+        let mut flag = libraries
+            .power_flag
+            .clone()
+            .expect("validated power flag library");
+        set_second_quoted(&mut flag, "power:PWR_FLAG");
+        embedded.push(flag);
     }
     embedded.extend(seen.into_values());
     root.push(list(embedded));
@@ -216,7 +296,7 @@ fn schematic_node(project: &ResolvedProject, libraries: &ResolvedLibraries) -> N
                 quoted(&project.project.name),
                 list(vec![
                     sym("path"),
-                    quoted(format!("/{root_uuid}")),
+                    quoted(&instance_path),
                     list(vec![sym("reference"), quoted(&component.reference)]),
                     list(vec![sym("unit"), sym(placement.unit.to_string())]),
                 ]),
@@ -225,6 +305,11 @@ fn schematic_node(project: &ResolvedProject, libraries: &ResolvedLibraries) -> N
         root.push(list(items));
     }
 
+    for (index, endpoint) in project.power_sources.iter().enumerate() {
+        if let Some(at) = endpoint_position(project, libraries, endpoint) {
+            root.push(power_flag(project, endpoint, at, index, &instance_path));
+        }
+    }
     for (wire_index, wire) in project.schematic.wires.iter().enumerate() {
         for (segment_index, segment) in wire.path.windows(2).enumerate() {
             root.push(list(vec![
@@ -236,7 +321,7 @@ fn schematic_node(project: &ResolvedProject, libraries: &ResolvedLibraries) -> N
                     quoted(
                         stable_uuid(
                             project,
-                            &format!("schematic/wire/{wire_index}/{segment_index}"),
+                            &format!("schematic/wire/{sheet}/{wire_index}/{segment_index}"),
                         )
                         .to_string(),
                     ),
@@ -255,7 +340,7 @@ fn schematic_node(project: &ResolvedProject, libraries: &ResolvedLibraries) -> N
                     net,
                     at,
                     0.0,
-                    &format!("endpoint/{endpoint}"),
+                    &format!("{sheet}/endpoint/{endpoint}"),
                 ));
             }
         }
@@ -266,7 +351,7 @@ fn schematic_node(project: &ResolvedProject, libraries: &ResolvedLibraries) -> N
             &label.net,
             label.at,
             label.rotation,
-            &format!("explicit/{index}"),
+            &format!("{sheet}/explicit/{index}"),
         ));
     }
     for endpoint in &project.schematic.no_connect {
@@ -277,7 +362,7 @@ fn schematic_node(project: &ResolvedProject, libraries: &ResolvedLibraries) -> N
                 list(vec![
                     sym("uuid"),
                     quoted(
-                        stable_uuid(project, &format!("schematic/no-connect/{endpoint}"))
+                        stable_uuid(project, &format!("schematic/no-connect/{sheet}/{endpoint}"))
                             .to_string(),
                     ),
                 ]),
@@ -285,6 +370,11 @@ fn schematic_node(project: &ResolvedProject, libraries: &ResolvedLibraries) -> N
         }
     }
 
+    if sheet.is_empty() {
+        for (index, child) in project.schematic.sheets.iter().enumerate() {
+            root.push(sheet_symbol(project, child, index));
+        }
+    }
     root.push(list(vec![
         sym("sheet_instances"),
         list(vec![
@@ -307,13 +397,14 @@ fn pcb_node(project: &ResolvedProject, libraries: &ResolvedLibraries) -> Node {
         ]),
         list(vec![
             sym("general"),
-            list(vec![sym("thickness"), num(1.6)]),
+            list(vec![sym("thickness"), num(project.pcb.stackup.thickness)]),
             list(vec![sym("legacy_teardrops"), sym("no")]),
         ]),
         list(vec![sym("paper"), quoted("A4")]),
-        pcb_layers(),
+        pcb_layers(&project.pcb.stackup),
         list(vec![
             sym("setup"),
+            physical_stackup(&project.pcb.stackup),
             list(vec![sym("pad_to_mask_clearance"), num(0.0)]),
             list(vec![
                 sym("allow_soldermask_bridges_in_footprints"),
@@ -432,6 +523,36 @@ fn pcb_node(project: &ResolvedProject, libraries: &ResolvedLibraries) -> Node {
         }
         root.push(list(items));
     }
+    for (index, area) in project.pcb.keepouts.iter().enumerate() {
+        let layers = if area.layers.is_empty() {
+            project.pcb.stackup.copper_layers()
+        } else {
+            area.layers.clone()
+        };
+        for layer in layers {
+            let mut pts = vec![sym("pts")];
+            pts.extend(area.outline.iter().map(|p| xy(frame.map(*p))));
+            let mut restrictions = vec![sym("keepout")];
+            for item in ["tracks", "vias", "pads", "copperpour", "footprints"] {
+                restrictions.push(list(vec![sym(item), sym("not_allowed")]));
+            }
+            root.push(list(vec![
+                sym("zone"),
+                list(vec![sym("net"), sym("0")]),
+                list(vec![sym("net_name"), quoted("")]),
+                list(vec![sym("layer"), quoted(&layer)]),
+                list(vec![
+                    sym("uuid"),
+                    quoted(
+                        stable_uuid(project, &format!("pcb/keepout/{index}/{layer}")).to_string(),
+                    ),
+                ]),
+                list(vec![sym("hatch"), sym("edge"), num(0.5)]),
+                list(restrictions),
+                list(vec![sym("polygon"), list(pts)]),
+            ]));
+        }
+    }
     for (index, zone) in project.pcb.zones.iter().enumerate() {
         let Some(code) = net_codes.get(&zone.net) else {
             continue;
@@ -447,20 +568,21 @@ fn pcb_node(project: &ResolvedProject, libraries: &ResolvedLibraries) -> Node {
                 sym("uuid"),
                 quoted(stable_uuid(project, &format!("pcb/zone/{index}")).to_string()),
             ]),
+            list(vec![sym("priority"), sym(zone.priority.to_string())]),
             list(vec![sym("hatch"), sym("edge"), num(0.5)]),
-            list(vec![
-                sym("connect_pads"),
-                list(vec![
-                    sym("clearance"),
-                    num(zone.clearance.unwrap_or(project.rules.clearance)),
-                ]),
-            ]),
+            zone_connection(zone, project.rules.clearance),
             list(vec![sym("min_thickness"), num(0.25)]),
             list(vec![
                 sym("fill"),
                 sym("yes"),
-                list(vec![sym("thermal_gap"), num(0.3)]),
-                list(vec![sym("thermal_bridge_width"), num(0.3)]),
+                list(vec![
+                    sym("thermal_gap"),
+                    num(zone.thermal_gap.unwrap_or(0.3)),
+                ]),
+                list(vec![
+                    sym("thermal_bridge_width"),
+                    num(zone.thermal_width.unwrap_or(0.3)),
+                ]),
             ]),
             list(vec![sym("polygon"), list(pts)]),
         ]));
@@ -648,6 +770,18 @@ fn placed_footprint(
 }
 
 fn project_json(project: &ResolvedProject) -> String {
+    let sheets: Vec<_> = std::iter::once(json!([
+        stable_uuid(project, "schematic/root").to_string(),
+        "Root"
+    ]))
+    .chain(
+        project
+            .schematic
+            .sheets
+            .iter()
+            .map(|sheet| json!([sheet_uuid(project, sheet).to_string(), sheet])),
+    )
+    .collect();
     let rules = &project.rules;
     let mut output = json!({
         "board": {
@@ -686,7 +820,7 @@ fn project_json(project: &ResolvedProject) -> String {
         },
         "pcbnew": {},
         "schematic": { "meta": { "version": 1 } },
-        "sheets": [[stable_uuid(project, "schematic/root").to_string(), "Root"]],
+        "sheets": sheets,
         "text_variables": {}
     });
     for (name, class) in &rules.net_classes {
@@ -717,8 +851,8 @@ fn design_rules(project: &ResolvedProject) -> String {
     let mut out = String::from("(version 1)\n");
     for (name, class) in &project.rules.net_classes {
         out.push_str(&format!("(rule \"{name}-width\" (condition \"A.NetClass == '{name}'\") (constraint track_width (min {})))\n",class.minimum_track_width));
-        for layer in ["F.Cu", "B.Cu"] {
-            if !class.allowed_layers.iter().any(|l| l == layer) {
+        for layer in project.pcb.stackup.copper_layers() {
+            if !class.allows(&layer) {
                 out.push_str(&format!("(rule \"{name}-{layer}\" (condition \"A.NetClass == '{name}'\") (layer \"{layer}\") (constraint disallow track via zone))\n"));
             }
         }
@@ -798,8 +932,12 @@ fn property_node(
 }
 
 fn label_node(project: &ResolvedProject, net: &str, at: Point, rotation: f64, key: &str) -> Node {
-    list(vec![
-        sym("label"),
+    let mut items = vec![
+        sym(if project.schematic.sheets.is_empty() {
+            "label"
+        } else {
+            "global_label"
+        }),
         quoted(net),
         at3(at[0], at[1], rotation),
         effects(false),
@@ -807,7 +945,11 @@ fn label_node(project: &ResolvedProject, net: &str, at: Point, rotation: f64, ke
             sym("uuid"),
             quoted(stable_uuid(project, &format!("schematic/label/{net}/{key}")).to_string()),
         ]),
-    ])
+    ];
+    if !project.schematic.sheets.is_empty() {
+        items.push(list(vec![sym("shape"), sym("passive")]));
+    }
+    list(items)
 }
 
 fn effects(hide: bool) -> Node {
@@ -832,11 +974,9 @@ fn stroke(width: f64) -> Node {
     ])
 }
 
-fn pcb_layers() -> Node {
-    list(vec![
+fn pcb_layers(stackup: &crate::stackup::Stackup) -> Node {
+    let mut items = vec![
         sym("layers"),
-        list(vec![sym("0"), quoted("F.Cu"), sym("signal")]),
-        list(vec![sym("2"), quoted("B.Cu"), sym("signal")]),
         list(vec![
             sym("9"),
             quoted("F.Adhes"),
@@ -893,7 +1033,21 @@ fn pcb_layers() -> Node {
         ]),
         list(vec![sym("35"), quoted("F.Fab"), sym("user")]),
         list(vec![sym("33"), quoted("B.Fab"), sym("user")]),
-    ])
+    ];
+    for (index, layer) in stackup.copper_layers().iter().enumerate().rev() {
+        let id = if layer == "F.Cu" {
+            0
+        } else if layer == "B.Cu" {
+            2
+        } else {
+            2 * index + 2
+        };
+        items.insert(
+            1,
+            list(vec![sym(id.to_string()), quoted(layer), sym("signal")]),
+        );
+    }
+    list(items)
 }
 
 fn gr_line(
@@ -1216,6 +1370,150 @@ fn at3(x: f64, y: f64, rotation: f64) -> Node {
     list(vec![sym("at"), num(x), num(y), num(rotation)])
 }
 
+fn zone_connection(zone: &crate::model::Zone, clearance: f64) -> Node {
+    let mut items = vec![sym("connect_pads")];
+    if zone.solid {
+        items.push(sym("yes"));
+    }
+    items.push(list(vec![
+        sym("clearance"),
+        num(zone.clearance.unwrap_or(clearance)),
+    ]));
+    list(items)
+}
+fn physical_stackup(stackup: &crate::stackup::Stackup) -> Node {
+    let mut items = vec![sym("stackup")];
+    let layers = stackup.copper_layers();
+    for (index, layer) in layers.iter().enumerate() {
+        items.push(list(vec![
+            sym("layer"),
+            quoted(layer),
+            list(vec![sym("type"), quoted("copper")]),
+            list(vec![sym("thickness"), num(stackup.copper_thickness)]),
+        ]));
+        if index + 1 < layers.len() {
+            let dielectric = stackup.dielectrics.get(index);
+            let thickness = dielectric.map(|d| d.thickness).unwrap_or(
+                (stackup.thickness - f64::from(stackup.layers) * stackup.copper_thickness)
+                    / f64::from(stackup.layers - 1),
+            );
+            items.push(list(vec![
+                sym("layer"),
+                quoted(format!("dielectric {}", index + 1)),
+                list(vec![sym("type"), quoted("core")]),
+                list(vec![sym("thickness"), num(thickness)]),
+                list(vec![
+                    sym("material"),
+                    quoted(dielectric.map(|d| d.material.as_str()).unwrap_or("FR4")),
+                ]),
+                list(vec![
+                    sym("epsilon_r"),
+                    num(dielectric.map(|d| d.epsilon_r).unwrap_or(4.5)),
+                ]),
+            ]));
+        }
+    }
+    list(items)
+}
+
+fn sheet_uuid(project: &ResolvedProject, sheet: &str) -> Uuid {
+    stable_uuid(project, &format!("schematic/sheet/{sheet}"))
+}
+fn sheet_filename(project: &ResolvedProject, sheet: &str) -> String {
+    format!("{}.kicad_sch", sheet_uuid(project, sheet))
+}
+fn sheet_symbol(project: &ResolvedProject, sheet: &str, index: usize) -> Node {
+    let at = [
+        20.0 + (index % 4) as f64 * 65.0,
+        120.0 + (index / 4) as f64 * 25.0,
+    ];
+    let path = list(vec![
+        sym("path"),
+        quoted(format!("/{}", stable_uuid(project, "schematic/root"))),
+        list(vec![sym("page"), quoted((index + 2).to_string())]),
+    ]);
+    let instances = list(vec![
+        sym("instances"),
+        list(vec![sym("project"), quoted(&project.project.name), path]),
+    ]);
+    list(vec![
+        sym("sheet"),
+        at2(at),
+        list(vec![sym("size"), num(50.), num(15.)]),
+        list(vec![
+            sym("uuid"),
+            quoted(sheet_uuid(project, sheet).to_string()),
+        ]),
+        list(vec![
+            sym("property"),
+            quoted("Sheetname"),
+            quoted(sheet),
+            at3(at[0], at[1] - 1.27, 0.),
+            effects(false),
+        ]),
+        list(vec![
+            sym("property"),
+            quoted("Sheetfile"),
+            quoted(format!(
+                "{}.sheets/{}",
+                project.project.name,
+                sheet_filename(project, sheet)
+            )),
+            at3(at[0], at[1] + 16.27, 0.),
+            effects(false),
+        ]),
+        instances,
+    ])
+}
+
+fn power_flag(
+    project: &ResolvedProject,
+    endpoint: &str,
+    at: Point,
+    index: usize,
+    path: &str,
+) -> Node {
+    let reference = format!("#FLG{}", index + 1);
+    let uuid = stable_uuid(project, &format!("schematic/power/{endpoint}"));
+    let instance = list(vec![
+        sym("path"),
+        quoted(path),
+        list(vec![sym("reference"), quoted(&reference)]),
+        list(vec![sym("unit"), sym("1")]),
+    ]);
+    list(vec![
+        sym("symbol"),
+        list(vec![sym("lib_id"), quoted("power:PWR_FLAG")]),
+        at3(at[0], at[1], 0.),
+        list(vec![sym("unit"), sym("1")]),
+        list(vec![sym("in_bom"), sym("no")]),
+        list(vec![sym("on_board"), sym("no")]),
+        list(vec![sym("uuid"), quoted(uuid.to_string())]),
+        list(vec![
+            sym("property"),
+            quoted("Reference"),
+            quoted(&reference),
+            at3(at[0], at[1], 0.0),
+            effects(true),
+        ]),
+        list(vec![
+            sym("property"),
+            quoted("Value"),
+            quoted("PWR_FLAG"),
+            at3(at[0], at[1], 0.0),
+            effects(true),
+        ]),
+        list(vec![
+            sym("instances"),
+            list(vec![
+                sym("project"),
+                quoted(&project.project.name),
+                instance,
+            ]),
+        ]),
+    ])
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1379,6 +1677,7 @@ pub(crate) mod tests {
         project.nets.insert("B".into(), pin_twos);
         let il = serde_json::to_string(&project).unwrap();
         let libraries = ResolvedLibraries {
+            power_flag: None,
             components: project
                 .components
                 .keys()

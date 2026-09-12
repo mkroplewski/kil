@@ -31,6 +31,7 @@ pub struct Resolution {
 }
 pub fn resolve(source: &Project, file: &Path) -> Resolution {
     let project = ResolvedProject {
+        power_sources: vec![],
         schema: source.schema.clone(),
         library_fingerprint: String::new(),
         format_version: source.format_version,
@@ -40,6 +41,8 @@ pub fn resolve(source: &Project, file: &Path) -> Resolution {
         nets: IndexMap::new(),
         schematic: Schematic::default(),
         pcb: Pcb {
+            keepouts: vec![],
+            stackup: source.pcb.stackup.clone().unwrap_or_default(),
             outline: source.pcb.outline.clone(),
             placement: IndexMap::new(),
             routes: IndexMap::new(),
@@ -141,6 +144,12 @@ pub fn resolve(source: &Project, file: &Path) -> Resolution {
         .project
         .schematic
         .no_connect
+        .iter()
+        .map(|s| canonical(s))
+        .collect();
+    result.project.power_sources = result
+        .project
+        .power_sources
         .iter()
         .map(|s| canonical(s))
         .collect();
@@ -265,30 +274,49 @@ fn expand(
             .extend(endpoints.iter().map(|e| qualify(prefix, e)));
     }
     r.project
+        .power_sources
+        .extend(circuit.power_sources.iter().map(|e| qualify(prefix, e)));
+    r.project
         .schematic
         .no_connect
         .extend(circuit.unconnected.iter().map(|e| qualify(prefix, e)));
     if let Some(transform) = sch {
-        let mut schematic = Schematic {
-            placement: IndexMap::new(),
-            wires: view.wires.clone(),
-            labels: view.labels.clone(),
-            no_connect: vec![],
-        };
-        for (id, symbol) in &view.symbols {
-            let mut symbol = symbol.clone();
-            symbol.part = qualify(prefix, &symbol.part);
-            schematic.placement.insert(qualify(prefix, id), symbol);
-        }
-        merge_schematic(
-            &mut r.project.schematic,
-            schematic,
+        merge_page(
+            r,
+            &view.symbols,
+            &view.wires,
+            &view.labels,
+            "",
+            prefix,
             transform,
             &net,
             file,
-            &mut r.diagnostics,
         );
+        for (page, contents) in &view.sheets {
+            if !valid_block_id(page) {
+                r.diagnostics.push(Diagnostic::error(
+                    "SCH006",
+                    "sheet names must be identifiers",
+                    file,
+                ));
+                continue;
+            }
+            let sheet = qualify(prefix, page);
+            r.project.schematic.sheets.insert(sheet.clone());
+            merge_page(
+                r,
+                &contents.symbols,
+                &contents.wires,
+                &contents.labels,
+                &sheet,
+                prefix,
+                transform,
+                &net,
+                file,
+            );
+        }
     }
+
     for (id, instance) in &circuit.instances {
         if !valid_block_id(id) || circuit.parts.contains_key(id) {
             r.diagnostics.push(Diagnostic::error(
@@ -369,10 +397,10 @@ fn expand(
             ));
             continue;
         }
-        if !m.pcb.outline.is_empty() {
+        if !m.pcb.outline.is_empty() || m.pcb.stackup.is_some() {
             r.diagnostics.push(Diagnostic::error(
                 "MOD015",
-                "module layouts cannot redefine the board outline",
+                "module layouts cannot redefine the board outline or stackup",
                 &canonical,
             ));
             continue;
@@ -499,6 +527,50 @@ fn substitute(
     }
     Ok(())
 }
+#[allow(clippy::too_many_arguments)]
+fn merge_page(
+    r: &mut Resolution,
+    symbols: &IndexMap<String, SchematicPlacement>,
+    wires: &[SchematicWire],
+    labels: &[SchematicLabel],
+    sheet: &str,
+    prefix: &str,
+    transform: Transform,
+    map_net: &dyn Fn(&str) -> String,
+    file: &Path,
+) {
+    let mut schematic = Schematic {
+        wires: wires.to_vec(),
+        labels: labels.to_vec(),
+        ..Default::default()
+    };
+    for (id, symbol) in symbols {
+        let mut symbol = symbol.clone();
+        symbol.part = qualify(prefix, &symbol.part);
+        symbol.sheet = sheet.into();
+        let view_id = if sheet.is_empty() {
+            qualify(prefix, id)
+        } else {
+            qualify(sheet, id)
+        };
+        schematic.placement.insert(view_id, symbol);
+    }
+    for wire in &mut schematic.wires {
+        wire.sheet = sheet.into();
+    }
+    for label in &mut schematic.labels {
+        label.sheet = sheet.into();
+    }
+    merge_schematic(
+        &mut r.project.schematic,
+        schematic,
+        transform,
+        map_net,
+        file,
+        &mut r.diagnostics,
+    );
+}
+
 fn merge_schematic(
     target: &mut Schematic,
     mut source: Schematic,
@@ -620,6 +692,22 @@ mod instance_tests {
             file,
         )
     }
+    #[test]
+    fn mixed_io_reference_resolves_without_expanding_the_authoring_format() {
+        let file =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/mixed-io/project.kil.json");
+        let source: Project = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+        let before = serde_json::to_value(&source).unwrap();
+        let result = resolve(&source, &file);
+        assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+        assert_eq!(result.project.components.len(), 203);
+        assert_eq!(result.project.schematic.sheets.len(), 24);
+        assert_eq!(result.project.pcb.stackup.layers, 4);
+        assert_eq!(result.project.power_sources, ["power.1", "power.2"]);
+        assert_eq!(result.project.nets["AIN0"].len(), 8);
+        assert_eq!(serde_json::to_value(&source).unwrap(), before);
+    }
+
     #[test]
     fn empty_terminal_is_rejected() {
         let (mut source, file) = example();

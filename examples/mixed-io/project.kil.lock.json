@@ -1,0 +1,26 @@
+{
+  "format_version": 2,
+  "assets": {
+    "footprint:Capacitor_SMD:C_0603_1608Metric": "e50a6ddd644ef5045d07dbf3fbc7ae48f7f4589d058c72abd7358990ca695b0c",
+    "footprint:Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical": "8c4c45461240320535e3d0c3e3f415ae0300b9de79c90c8fda370956a3073603",
+    "footprint:Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical": "c443601718148e1a4f99395a7c52d89d2f6beaed493f63d824788d99def7a649",
+    "footprint:Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical": "7020a811a3eeaba20587aacc29f8f8b116505cd572075306a78503718fb39316",
+    "footprint:Diode_SMD:D_SOD-323": "2fefa7fc61f5600828fe22df40899dd3ae707bd59e8aa6511091e7481e88033f",
+    "footprint:LED_SMD:LED_0603_1608Metric": "d3002ef87d93c9012b5f1078aefcdcbf25663a3b6c471d10d4445513eb8e278c",
+    "footprint:Package_QFP:LQFP-48_7x7mm_P0.5mm": "469e3d0df4adde2b8a400f53db60776855c17dc8bcda55543be5e29609e38f96",
+    "footprint:Package_TO_SOT_SMD:SOT-23": "a214d3146cd2b826f614a743a571783e88bbe9cba377bac15def00acb31cadab",
+    "footprint:Resistor_SMD:R_0603_1608Metric": "e485e42a56c89ca40e6080755a85122b57c9cd692f111d1bc507c76f8fc12ad2",
+    "footprint:TestPoint:TestPoint_Pad_D1.0mm": "61e43e34982b1a1c90b01cbcc948a752c2d0275795a1ab825debfa70f6e2e876",
+    "symbol:Connector:TestPoint": "25a467a2cfeb1e805c7f166f5733da3d29da10964f274f85596f0a282ca4dc4d",
+    "symbol:Connector_Generic:Conn_01x02": "ca5cf1076791aee2c41fdc3b46af485b312c5f60ce16b95682a9a504a47c36a7",
+    "symbol:Connector_Generic:Conn_01x03": "164ed5c4554131a4fcf9abe8664e635cc94223cfc07bc66b72fee3d50df6a550",
+    "symbol:Connector_Generic:Conn_01x05": "86bd3d65b80a8af5009afe55fa44cd1d6c67169fe61ca42fc8f847a30cfe3a37",
+    "symbol:Device:C": "22bb122fed5bc6753b5504e8cad59a8b637b2d0cdc5f88c5b061bdc4388e143b",
+    "symbol:Device:D_Schottky": "5ad1b153e11a66d212a683152e09a3aaaf6138dc9689a09e7a0508b03bcd2928",
+    "symbol:Device:LED": "724e49629a5ec4f3d56c0aa42e6ff1314b29b00a6bda6995556af7d1d269e635",
+    "symbol:Device:R": "a7a16f9a45447a293d9546291040840b5633c179c7082c7d27934f10b9d2e0eb",
+    "symbol:MCU_ST_STM32F1:STM32F103C8Tx": "5ee6721472e33f3b0b55dbcedf00557cb8e1adb4e8c25a4519ee6155e74044f7",
+    "symbol:Transistor_FET:2N7002": "9eaabe568c8a2af0abee61e326db37844734102a32ab3d3a2a21109bbae5f87c",
+    "symbol:power:PWR_FLAG": "0f91ebe34bd0bbb083b428175b6a719a5919b9b6a7a466a7036abdf49c11bf6f"
+  }
+}
