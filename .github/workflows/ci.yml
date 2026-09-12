@@ -61,6 +61,9 @@ jobs:
           sudo add-apt-repository --yes ppa:kicad/kicad-10.0-releases
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends kicad kicad-symbols kicad-footprints
+          mkdir -p "$HOME/.config/kicad/10.0"
+          cp /usr/share/kicad/template/sym-lib-table "$HOME/.config/kicad/10.0/sym-lib-table"
+          cp /usr/share/kicad/template/fp-lib-table "$HOME/.config/kicad/10.0/fp-lib-table"
           kicad-cli version | tee /tmp/kicad-version.txt
           grep -Eq '^10\.' /tmp/kicad-version.txt
 
