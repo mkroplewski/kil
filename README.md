@@ -122,9 +122,11 @@ Omit `pcb.stackup` for the usual two-layer, 1.6 mm board. A four-layer board onl
 
 Layers are named `F.Cu`, `In1.Cu`, `In2.Cu`, and `B.Cu`. Routes, planes, and net-class layer restrictions use those same names. Vias remain through vias and cross every copper layer. Omitting `allowed_layers` from a net class allows all board layers; a net class must allow every board copper layer to use through vias.
 
-Default copper is 0.035 mm thick, with the remaining thickness distributed evenly as FR4. These are generation defaults, not a manufacturer-approved impedance stackup. For a fabrication specification, set `thickness`, `copper_thickness`, and `dielectrics` in `stackup`. Each dielectric specifies its `thickness`, optionally `material` and `epsilon_r`, in order between adjacent copper layers. Thicknesses must add up. Only the root project defines the board stackup.
+Default copper is 0.035 mm thick, with the remaining thickness distributed evenly as FR4. These are generation defaults, not a manufacturer-approved impedance stackup. `copper_thickness` sets one thickness for every copper layer. To set each layer separately, use `copper_thicknesses` in `F.Cu`, inner-layer, then `B.Cu` order. A non-empty array overrides `copper_thickness` and must contain one positive thickness per copper layer. Existing files that only set `copper_thickness` keep the uniform behavior.
 
-Planes support optional `priority`, `solid`, `thermal_gap`, and `thermal_width`. The defaults retain thermal pad connections. See [four-layer-divider](examples/four-layer-divider.kil.json) for a checked inner-layer route and ground plane. Blind/buried vias and microvias are not supported.
+For a fabrication specification, set `thickness`, copper thickness, and `dielectrics` in `stackup`. Each dielectric specifies its `thickness`, optionally `material` and `epsilon_r`, in order between adjacent copper layers. Copper and dielectric thicknesses must add up to the board thickness. Only the root project defines the board stackup. See [four-layer-divider](examples/four-layer-divider.kil.json) for a board with different outer and inner copper thicknesses.
+
+Planes support optional `priority`, `solid`, `thermal_gap`, and `thermal_width`. The defaults retain thermal pad connections. The four-layer example also has a checked inner-layer route and ground plane. Blind/buried vias and microvias are not supported.
 
 ## Schematic sheets
 
@@ -150,10 +152,18 @@ Declare externally powered connector terminals with `circuit.power_sources`, for
 Reserve a region with `pcb.keepouts`:
 
 ```json
-"keepouts": [{"outline": [[1, 1], [4, 1], [4, 8], [1, 8]]}]
+"keepouts": [
+  {
+    "outline": [[1, 1], [4, 1], [4, 8], [1, 8]],
+    "tracks": false,
+    "vias": false,
+    "pads": false,
+    "footprints": false
+  }
+]
 ```
 
-A keepout excludes tracks, vias, pads, planes, and footprints. Omit `layers` to cover all copper layers, or specify a list such as `["F.Cu"]`. Modules can supply keepouts in their local PCB coordinates.
+A keepout excludes tracks, vias, pads, copper pours, and footprints by default. Set any of `tracks`, `vias`, `pads`, `copper_pours`, or `footprints` to `false` to allow that object type. The example reserves the area only from copper pours while allowing footprints and routed copper to overlap it. Omit `layers` to cover all copper layers, or specify a list such as `["F.Cu"]`. Modules can supply keepouts in their local PCB coordinates.
 
 The [mixed I/O reference](examples/mixed-io/README.md) exercises these features with 203 parts, 24 repeated channel modules, 24 child schematic sheets, and four copper layers.
 

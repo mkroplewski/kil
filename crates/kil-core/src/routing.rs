@@ -659,6 +659,34 @@ mod tests {
     }
 
     #[test]
+    fn routing_cache_tracks_stackup_and_keepout_restrictions() {
+        let (mut project, _) = crate::kicad::tests::fixture();
+        project.pcb.stackup.layers = 4;
+        project.pcb.keepouts = vec![
+            serde_json::from_value(serde_json::json!({
+                "outline": [[1, 1], [2, 1], [2, 2], [1, 2]]
+            }))
+            .unwrap(),
+        ];
+        let original = routing_fingerprint(&project);
+        let mut changed = project.clone();
+        changed.pcb.keepouts[0].footprints = false;
+        assert_ne!(original, routing_fingerprint(&changed));
+        changed = project.clone();
+        changed.pcb.stackup.copper_thicknesses = vec![0.07, 0.035, 0.035, 0.07];
+        assert_ne!(original, routing_fingerprint(&changed));
+
+        // Explicit legacy defaults must not change a cache fingerprint.
+        let mut encoded = serde_json::to_value(&project).unwrap();
+        encoded["pcb"]["stackup"]["copper_thicknesses"] = serde_json::json!([]);
+        for flag in ["tracks", "vias", "pads", "copper_pours", "footprints"] {
+            encoded["pcb"]["keepouts"][0][flag] = serde_json::json!(true);
+        }
+        let decoded: ResolvedProject = serde_json::from_value(encoded).unwrap();
+        assert_eq!(original, routing_fingerprint(&decoded));
+    }
+
+    #[test]
     fn default_cache_stays_next_to_source() {
         let source = include_str!("../testdata/resolved/tiny-controller.kil.json");
         let project: ResolvedProject = serde_json::from_str(source).unwrap();

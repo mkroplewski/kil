@@ -533,8 +533,17 @@ fn pcb_node(project: &ResolvedProject, libraries: &ResolvedLibraries) -> Node {
             let mut pts = vec![sym("pts")];
             pts.extend(area.outline.iter().map(|p| xy(frame.map(*p))));
             let mut restrictions = vec![sym("keepout")];
-            for item in ["tracks", "vias", "pads", "copperpour", "footprints"] {
-                restrictions.push(list(vec![sym(item), sym("not_allowed")]));
+            for (item, excluded) in [
+                ("tracks", area.tracks),
+                ("vias", area.vias),
+                ("pads", area.pads),
+                ("copperpour", area.copper_pours),
+                ("footprints", area.footprints),
+            ] {
+                restrictions.push(list(vec![
+                    sym(item),
+                    sym(if excluded { "not_allowed" } else { "allowed" }),
+                ]));
             }
             root.push(list(vec![
                 sym("zone"),
@@ -1384,18 +1393,19 @@ fn zone_connection(zone: &crate::model::Zone, clearance: f64) -> Node {
 fn physical_stackup(stackup: &crate::stackup::Stackup) -> Node {
     let mut items = vec![sym("stackup")];
     let layers = stackup.copper_layers();
+    let copper_thicknesses = stackup.resolved_copper_thicknesses();
+    let total_copper_thickness = copper_thicknesses.iter().sum::<f64>();
     for (index, layer) in layers.iter().enumerate() {
         items.push(list(vec![
             sym("layer"),
             quoted(layer),
             list(vec![sym("type"), quoted("copper")]),
-            list(vec![sym("thickness"), num(stackup.copper_thickness)]),
+            list(vec![sym("thickness"), num(copper_thicknesses[index])]),
         ]));
         if index + 1 < layers.len() {
             let dielectric = stackup.dielectrics.get(index);
             let thickness = dielectric.map(|d| d.thickness).unwrap_or(
-                (stackup.thickness - f64::from(stackup.layers) * stackup.copper_thickness)
-                    / f64::from(stackup.layers - 1),
+                (stackup.thickness - total_copper_thickness) / f64::from(stackup.layers - 1),
             );
             items.push(list(vec![
                 sym("layer"),
@@ -1633,6 +1643,60 @@ pub(crate) mod tests {
                 .schematic
                 .contains("(property \"Value\" \"R99\"")
         );
+    }
+
+    #[test]
+    fn keepout_restrictions_default_to_excluding_every_object_type() {
+        let (mut project, libraries) = fixture();
+        let mut keepout: crate::model::Keepout = serde_json::from_value(json!({
+            "outline": [[1.0, 1.0], [2.0, 1.0], [2.0, 2.0]]
+        }))
+        .unwrap();
+
+        assert!(keepout.tracks);
+        assert!(keepout.vias);
+        assert!(keepout.pads);
+        assert!(keepout.copper_pours);
+        assert!(keepout.footprints);
+        let serialized = serde_json::to_value(&keepout).unwrap();
+        for field in ["tracks", "vias", "pads", "copper_pours", "footprints"] {
+            assert!(
+                serialized.get(field).is_none(),
+                "default restriction `{field}` changed serialized project data"
+            );
+        }
+
+        project.pcb.keepouts = vec![keepout.clone()];
+        let pcb = generate(&project, &libraries).unwrap().pcb;
+        assert!(pcb.contains("(keepout (tracks not_allowed) (vias not_allowed) (pads not_allowed) (copperpour not_allowed) (footprints not_allowed))"));
+
+        keepout.tracks = false;
+        keepout.vias = false;
+        keepout.pads = false;
+        keepout.footprints = false;
+        project.pcb.keepouts = vec![keepout];
+        let pcb = generate(&project, &libraries).unwrap().pcb;
+        assert!(pcb.contains("(keepout (tracks allowed) (vias allowed) (pads allowed) (copperpour not_allowed) (footprints allowed))"));
+    }
+
+    #[test]
+    fn heterogeneous_copper_thicknesses_are_emitted_per_layer() {
+        let (mut project, libraries) = fixture();
+        project.pcb.stackup.layers = 4;
+        project.pcb.stackup.copper_thicknesses = vec![0.035, 0.0175, 0.0175, 0.07];
+        let pcb = generate(&project, &libraries).unwrap().pcb;
+
+        for expected in [
+            "(layer \"F.Cu\" (type \"copper\") (thickness 0.035))",
+            "(layer \"In1.Cu\" (type \"copper\") (thickness 0.0175))",
+            "(layer \"In2.Cu\" (type \"copper\") (thickness 0.0175))",
+            "(layer \"B.Cu\" (type \"copper\") (thickness 0.07))",
+        ] {
+            assert!(
+                pcb.contains(expected),
+                "missing `{expected}` in generated PCB"
+            );
+        }
     }
 
     #[test]

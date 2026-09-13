@@ -171,7 +171,24 @@
       }
     },
     "stackup": {
-      "layers": 4
+      "layers": 4,
+      "copper_thicknesses": [
+        0.035,
+        0.0175,
+        0.0175,
+        0.07
+      ],
+      "dielectrics": [
+        {
+          "thickness": 0.2
+        },
+        {
+          "thickness": 1.06
+        },
+        {
+          "thickness": 0.2
+        }
+      ]
     }
   },
   "circuit": {

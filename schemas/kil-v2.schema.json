@@ -247,6 +247,14 @@
       "additionalProperties": false,
       "description": "A region reserved from copper and component placement on the selected layers.",
       "properties": {
+        "copper_pours": {
+          "description": "Whether the keepout excludes copper pours.",
+          "type": "boolean"
+        },
+        "footprints": {
+          "description": "Whether the keepout excludes footprints.",
+          "type": "boolean"
+        },
         "layers": {
           "default": [],
           "description": "Empty means all copper layers.",
@@ -266,6 +274,18 @@
             "type": "array"
           },
           "type": "array"
+        },
+        "pads": {
+          "description": "Whether the keepout excludes pads.",
+          "type": "boolean"
+        },
+        "tracks": {
+          "description": "Whether the keepout excludes tracks.",
+          "type": "boolean"
+        },
+        "vias": {
+          "description": "Whether the keepout excludes vias.",
+          "type": "boolean"
         }
       },
       "required": [
@@ -849,6 +869,14 @@
           "description": "Uniform copper thickness in mm.",
           "format": "double",
           "type": "number"
+        },
+        "copper_thicknesses": {
+          "description": "Optional overrides ordered as F.Cu, inner layers, then B.Cu. A non-empty\nlist replaces copper_thickness.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "type": "array"
         },
         "dielectrics": {
           "default": [],

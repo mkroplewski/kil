@@ -384,4 +384,42 @@ pub struct Keepout {
     /// Empty means all copper layers.
     #[serde(default)]
     pub layers: Vec<String>,
+    /// Whether the keepout excludes tracks.
+    #[serde(
+        default = "keepout_restriction_default",
+        skip_serializing_if = "is_true"
+    )]
+    pub tracks: bool,
+    /// Whether the keepout excludes vias.
+    #[serde(
+        default = "keepout_restriction_default",
+        skip_serializing_if = "is_true"
+    )]
+    pub vias: bool,
+    /// Whether the keepout excludes pads.
+    #[serde(
+        default = "keepout_restriction_default",
+        skip_serializing_if = "is_true"
+    )]
+    pub pads: bool,
+    /// Whether the keepout excludes copper pours.
+    #[serde(
+        default = "keepout_restriction_default",
+        skip_serializing_if = "is_true"
+    )]
+    pub copper_pours: bool,
+    /// Whether the keepout excludes footprints.
+    #[serde(
+        default = "keepout_restriction_default",
+        skip_serializing_if = "is_true"
+    )]
+    pub footprints: bool,
+}
+
+fn keepout_restriction_default() -> bool {
+    true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
 }

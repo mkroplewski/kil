@@ -1,5 +1,6 @@
 //! Explicit integration gates: ignored by ordinary CI, never silently successful.
 use kil_core::{BuildOptions, ExitClass, RouteOptions};
+use kiutils_sexpr::{Atom, CstDocument, Node};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -17,6 +18,51 @@ fn lock(path: &Path) {
             .resolve_all(&project, path, &loaded.source);
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
     kil_core::lock::write(path, &libraries).unwrap();
+}
+
+fn copper_stackup(cst: &CstDocument) -> Vec<(String, f64)> {
+    fn items(node: &Node) -> Option<&[Node]> {
+        let Node::List { items, .. } = node else {
+            return None;
+        };
+        Some(items)
+    }
+    fn atom(node: &Node) -> Option<&str> {
+        let Node::Atom { atom, .. } = node else {
+            return None;
+        };
+        match atom {
+            Atom::Symbol(value) | Atom::Quoted(value) => Some(value),
+        }
+    }
+    fn child<'a>(nodes: &'a [Node], name: &str) -> Option<&'a [Node]> {
+        nodes.iter().find_map(|node| {
+            let items = items(node)?;
+            (items.first().and_then(atom) == Some(name)).then_some(items)
+        })
+    }
+
+    let root = items(cst.nodes.first().expect("PCB root")).expect("PCB root list");
+    let setup = child(root, "setup").expect("PCB setup");
+    let stackup = child(setup, "stackup").expect("physical stackup");
+    stackup
+        .iter()
+        .filter_map(|node| {
+            let layer = items(node)?;
+            if layer.first().and_then(atom) != Some("layer") {
+                return None;
+            }
+            let name = layer.get(1).and_then(atom)?;
+            if !name.ends_with(".Cu") {
+                return None;
+            }
+            let thickness = child(layer, "thickness")?.get(1).and_then(atom)?;
+            Some((
+                name.to_owned(),
+                thickness.parse().expect("copper thickness"),
+            ))
+        })
+        .collect()
 }
 #[test]
 #[ignore = "requires KiCad 10; set KIL_KICAD_CLI and run --ignored"]
@@ -209,6 +255,15 @@ fn four_layer_board_preserves_inner_copper_and_planes() {
     assert_eq!(result.exit, ExitClass::Success, "{:?}", result.diagnostics);
     let board = output.join("four-layer-divider.kicad_pcb");
     let doc = kiutils_kicad::PcbFile::read(&board).unwrap();
+    assert_eq!(
+        copper_stackup(doc.cst()),
+        [
+            ("F.Cu".into(), 0.035),
+            ("In1.Cu".into(), 0.0175),
+            ("In2.Cu".into(), 0.0175),
+            ("B.Cu".into(), 0.07),
+        ]
+    );
     assert!(
         doc.ast()
             .segments
@@ -275,6 +330,15 @@ fn power_sources_preserve_nets_and_keepouts_are_enforced() {
     source["circuit"]["power_sources"] = serde_json::json!(["R1.1", "R1.2"]);
     source["pcb"]["keepouts"] =
         serde_json::json!([{"outline":[[0.1,0.1],[0.4,0.1],[0.4,0.4],[0.1,0.4]]}]);
+    source["pcb"]["zones"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "net": "GND",
+            "layer": "F.Cu",
+            "solid": true,
+            "outline": [[0.5, 0.5], [11.5, 0.5], [11.5, 13.5], [0.5, 13.5]]
+        }));
     fs::write(&input, source.to_string()).unwrap();
     lock(&input);
     let options = BuildOptions {
@@ -284,7 +348,15 @@ fn power_sources_preserve_nets_and_keepouts_are_enforced() {
     };
     let result = kil_core::check(&options);
     assert_eq!(result.exit, ExitClass::Success, "{:?}", result.diagnostics);
-    source["pcb"]["keepouts"][0]["outline"] = serde_json::json!([[4, 4], [6, 4], [6, 10], [4, 10]]);
+    source["pcb"]["keepouts"][0] = serde_json::json!({
+        "outline": [[4, 4], [6, 4], [6, 10], [4, 10]],
+        "layers": ["F.Cu"],
+        "tracks": false,
+        "vias": false,
+        "pads": false,
+        "copper_pours": true,
+        "footprints": true
+    });
     fs::write(&input, source.to_string()).unwrap();
     let result = kil_core::check(&options);
     assert_ne!(result.exit, ExitClass::Invalid, "{:?}", result.diagnostics);
@@ -293,6 +365,15 @@ fn power_sources_preserve_nets_and_keepouts_are_enforced() {
             .diagnostics
             .iter()
             .any(|d| d.code == "DRC" && d.severity == kil_core::Severity::Error)
+    );
+    source["pcb"]["keepouts"][0]["footprints"] = serde_json::json!(false);
+    fs::write(&input, source.to_string()).unwrap();
+    let result = kil_core::check(&options);
+    assert_eq!(
+        result.exit,
+        ExitClass::Success,
+        "copper-pour-only keepout should allow footprint overlap: {:?}",
+        result.diagnostics
     );
 }
 
