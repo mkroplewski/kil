@@ -144,11 +144,20 @@ pub fn validate_basic(project: &ResolvedProject, file: &Path, source: &str) -> V
                 .any(|p| !point_in_polygon(*p, &project.pcb.outline))
             || area.layers.iter().collect::<BTreeSet<_>>().len() != area.layers.len()
             || area.layers.iter().any(|l| !copper_layers.contains(l))
+            || ![
+                area.tracks,
+                area.vias,
+                area.pads,
+                area.copper_pours,
+                area.footprints,
+            ]
+            .into_iter()
+            .any(|restricted| restricted)
         {
             push(
                 Diagnostic::error(
                     "PCB022",
-                    "keepout must be a board-contained polygon on declared copper layers",
+                    "keepout must be a board-contained polygon on declared copper layers with at least one restriction",
                     file,
                 ),
                 format!("/pcb/keepouts/{index}"),
@@ -713,9 +722,32 @@ mod tests {
         project.pcb.keepouts.push(crate::model::Keepout {
             outline: vec![[0., 0.], [1., 0.], [1., 1.]],
             layers: vec!["In7.Cu".into()],
+            tracks: true,
+            vias: true,
+            pads: true,
+            copper_pours: true,
+            footprints: true,
         });
         let diagnostics = validate_basic(&project, Path::new("test.json"), "");
         assert!(diagnostics.iter().any(|d| d.code == "NET010"));
+        assert!(diagnostics.iter().any(|d| d.code == "PCB022"));
+    }
+
+    #[test]
+    fn keepout_requires_at_least_one_restriction() {
+        let (mut project, _) = crate::kicad::tests::fixture();
+        let keepout = serde_json::from_value(serde_json::json!({
+            "outline": [[1.0, 1.0], [2.0, 1.0], [2.0, 2.0]],
+            "tracks": false,
+            "vias": false,
+            "pads": false,
+            "copper_pours": false,
+            "footprints": false
+        }))
+        .unwrap();
+        project.pcb.keepouts.push(keepout);
+
+        let diagnostics = validate_basic(&project, Path::new("test.json"), "");
         assert!(diagnostics.iter().any(|d| d.code == "PCB022"));
     }
 

@@ -72,6 +72,6 @@ Use `kil build` when the user requests generated KiCad files or when finished ar
 
 ## Boundaries
 
-KIL v2 targets KiCad 10, one schematic sheet, single- and multi-unit library symbols, library footprints, and two copper layers. It has no importer, round-trip editing, electrical hierarchy, buses, embedded libraries, inner copper layers, or native differential-pair and length-tuning constraints.
+KIL v2 targets KiCad 10, multiple schematic sheets, reusable circuit modules, single- and multi-unit library symbols, library footprints, and 2 to 32 copper layers. It has no importer, round-trip editing, buses, embedded libraries, blind/buried vias, or native differential-pair and length-tuning constraints. Read the current schema for stackup and keepout options instead of assuming all copper layers or all keepout restrictions must be identical.
 
 Do not hide these limits by emitting unsupported fields. If the requested design needs an unsupported feature, identify the exact boundary and stop before producing misleading output.

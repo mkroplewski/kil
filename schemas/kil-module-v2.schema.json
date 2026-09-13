@@ -310,6 +310,30 @@
       "additionalProperties": false,
       "description": "A region reserved from copper and component placement on the selected layers.",
       "properties": {
+        "copper_pours": {
+          "anyOf": [
+            {
+              "description": "Whether the keepout excludes copper pours.",
+              "type": "boolean"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        },
+        "footprints": {
+          "anyOf": [
+            {
+              "description": "Whether the keepout excludes footprints.",
+              "type": "boolean"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        },
         "layers": {
           "default": [],
           "description": "Empty means all copper layers.",
@@ -337,6 +361,42 @@
             "type": "array"
           },
           "type": "array"
+        },
+        "pads": {
+          "anyOf": [
+            {
+              "description": "Whether the keepout excludes pads.",
+              "type": "boolean"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        },
+        "tracks": {
+          "anyOf": [
+            {
+              "description": "Whether the keepout excludes tracks.",
+              "type": "boolean"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
+        },
+        "vias": {
+          "anyOf": [
+            {
+              "description": "Whether the keepout excludes vias.",
+              "type": "boolean"
+            },
+            {
+              "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+              "type": "string"
+            }
+          ]
         }
       },
       "required": [
@@ -914,6 +974,22 @@
               "type": "string"
             }
           ]
+        },
+        "copper_thicknesses": {
+          "description": "Optional overrides ordered as F.Cu, inner layers, then B.Cu. A non-empty\nlist replaces copper_thickness.",
+          "items": {
+            "anyOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "pattern": "^\\$\\{[\\s\\S]*\\}(?![\\s\\S])",
+                "type": "string"
+              }
+            ]
+          },
+          "type": "array"
         },
         "dielectrics": {
           "default": [],
