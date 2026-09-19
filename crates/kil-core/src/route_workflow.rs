@@ -646,12 +646,11 @@ pub fn validation_identity(cli: &Path) -> Value {
                 || matches!(k.as_str(), "LANG" | "LANGUAGE" | "XDG_CONFIG_HOME")
         })
         .collect();
-    // Prefer an explicit config home so parallel runs and first-time file
-    // creation do not observe a shifting mix of HOME/XDG preference paths.
-    let roots = if let Some(root) = std::env::var_os("KICAD_CONFIG_HOME") {
-        vec![std::path::PathBuf::from(root)]
+    let mut roots = vec![];
+    // KiCad stores versioned prefs under $KICAD_CONFIG_HOME/10.0 when set.
+    if let Some(root) = std::env::var_os("KICAD_CONFIG_HOME") {
+        roots.push(std::path::PathBuf::from(root).join("10.0"));
     } else {
-        let mut roots = vec![];
         for key in ["APPDATA", "XDG_CONFIG_HOME"] {
             if let Some(root) = std::env::var_os(key) {
                 roots.push(std::path::PathBuf::from(root).join("kicad/10.0"));
@@ -664,8 +663,7 @@ pub fn validation_identity(cli: &Path) -> Value {
                 roots.push(root.join("Library/Preferences/kicad/10.0"));
             }
         }
-        roots
-    };
+    }
     let mut configuration = BTreeMap::new();
     for name in ["kicad_common.json", "pcbnew.json", "eeschema.json"] {
         let bytes = roots.iter().find_map(|r| fs::read(r.join(name)).ok());
@@ -683,7 +681,10 @@ pub fn validation_identity(cli: &Path) -> Value {
             if let Ok(bytes) = fs::read(&path) {
                 configuration.insert(
                     path.display().to_string(),
-                    format!("{:x}", Sha256::digest(validation_settings(name, Some(&bytes)))),
+                    format!(
+                        "{:x}",
+                        Sha256::digest(validation_settings(name, Some(&bytes)))
+                    ),
                 );
             }
         }
@@ -1333,13 +1334,25 @@ mod tests {
         let mut next = first.clone();
         next["system"]["working_dir"] = json!("two");
         assert_eq!(
-            validation_settings("kicad_common.json", Some(&serde_json::to_vec(&first).unwrap())),
-            validation_settings("kicad_common.json", Some(&serde_json::to_vec(&next).unwrap()))
+            validation_settings(
+                "kicad_common.json",
+                Some(&serde_json::to_vec(&first).unwrap())
+            ),
+            validation_settings(
+                "kicad_common.json",
+                Some(&serde_json::to_vec(&next).unwrap())
+            )
         );
         next["system"]["language"] = json!("pl");
         assert_ne!(
-            validation_settings("kicad_common.json", Some(&serde_json::to_vec(&first).unwrap())),
-            validation_settings("kicad_common.json", Some(&serde_json::to_vec(&next).unwrap()))
+            validation_settings(
+                "kicad_common.json",
+                Some(&serde_json::to_vec(&first).unwrap())
+            ),
+            validation_settings(
+                "kicad_common.json",
+                Some(&serde_json::to_vec(&next).unwrap())
+            )
         );
         assert_ne!(
             validation_settings(

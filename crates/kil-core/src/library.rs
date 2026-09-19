@@ -628,7 +628,7 @@ fn standard_roots() -> Vec<PathBuf> {
 fn global_config_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     if let Ok(home) = env::var("KICAD_CONFIG_HOME") {
-        dirs.push(PathBuf::from(home));
+        dirs.push(PathBuf::from(home).join("10.0"));
         return dirs;
     }
     if let Ok(appdata) = env::var("APPDATA") {
@@ -638,7 +638,12 @@ fn global_config_dirs() -> Vec<PathBuf> {
         dirs.push(PathBuf::from(config).join("kicad").join("10.0"));
     }
     if let Ok(home) = env::var("HOME") {
-        dirs.push(PathBuf::from(home).join(".config").join("kicad").join("10.0"));
+        dirs.push(
+            PathBuf::from(home)
+                .join(".config")
+                .join("kicad")
+                .join("10.0"),
+        );
     }
     if let Ok(user_profile) = env::var("USERPROFILE") {
         dirs.push(
