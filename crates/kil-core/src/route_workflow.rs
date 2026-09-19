@@ -612,18 +612,27 @@ pub fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<(), Stri
     Ok(())
 }
 
-fn validation_settings(name: &str, bytes: &[u8]) -> Vec<u8> {
-    let Ok(value) = serde_json::from_slice::<Value>(bytes) else {
-        return bytes.to_vec();
-    };
+fn validation_settings(name: &str, bytes: Option<&[u8]>) -> Vec<u8> {
+    let value = bytes.and_then(|b| serde_json::from_slice::<Value>(b).ok());
     // Headless commands update file history, working directories and window
     // state. Those are not validation dependencies. Board design settings and
     // severity rules are in the generated .kicad_pro, hashed separately.
+    // Missing preference files must hash like empty ones: first KiCad runs create
+    // them and must not invalidate an otherwise identical DRC cache key.
     let relevant = match name {
-        "kicad_common.json" => json!([value["environment"], value["system"]["language"]]),
-        "pcbnew.json" => json!(value["DRC"]["report_all_track_errors"]),
-        "eeschema.json" => json!(value["ERC"]["show_all_errors"]),
-        _ => return bytes.to_vec(),
+        "kicad_common.json" => {
+            let value = value.unwrap_or(Value::Null);
+            json!([value["environment"], value["system"]["language"]])
+        }
+        "pcbnew.json" => {
+            let value = value.unwrap_or(Value::Null);
+            json!(value["DRC"]["report_all_track_errors"])
+        }
+        "eeschema.json" => {
+            let value = value.unwrap_or(Value::Null);
+            json!(value["ERC"]["show_all_errors"])
+        }
+        _ => return bytes.unwrap_or_default().to_vec(),
     };
     serde_json::to_vec(&relevant).unwrap()
 }
@@ -637,46 +646,50 @@ pub fn validation_identity(cli: &Path) -> Value {
                 || matches!(k.as_str(), "LANG" | "LANGUAGE" | "XDG_CONFIG_HOME")
         })
         .collect();
-    let mut roots = vec![];
-    for key in ["APPDATA", "XDG_CONFIG_HOME"] {
-        if let Some(root) = std::env::var_os(key) {
-            roots.push(std::path::PathBuf::from(root).join("kicad/10.0"));
+    // Prefer an explicit config home so parallel runs and first-time file
+    // creation do not observe a shifting mix of HOME/XDG preference paths.
+    let roots = if let Some(root) = std::env::var_os("KICAD_CONFIG_HOME") {
+        vec![std::path::PathBuf::from(root)]
+    } else {
+        let mut roots = vec![];
+        for key in ["APPDATA", "XDG_CONFIG_HOME"] {
+            if let Some(root) = std::env::var_os(key) {
+                roots.push(std::path::PathBuf::from(root).join("kicad/10.0"));
+            }
         }
-    }
-    for key in ["HOME", "USERPROFILE"] {
-        if let Some(root) = std::env::var_os(key) {
-            let root = std::path::PathBuf::from(root);
-            roots.push(root.join(".config/kicad/10.0"));
-            roots.push(root.join("Library/Preferences/kicad/10.0"));
+        for key in ["HOME", "USERPROFILE"] {
+            if let Some(root) = std::env::var_os(key) {
+                let root = std::path::PathBuf::from(root);
+                roots.push(root.join(".config/kicad/10.0"));
+                roots.push(root.join("Library/Preferences/kicad/10.0"));
+            }
         }
+        roots
+    };
+    let mut configuration = BTreeMap::new();
+    for name in ["kicad_common.json", "pcbnew.json", "eeschema.json"] {
+        let bytes = roots.iter().find_map(|r| fs::read(r.join(name)).ok());
+        configuration.insert(
+            name.to_string(),
+            format!(
+                "{:x}",
+                Sha256::digest(validation_settings(name, bytes.as_deref()))
+            ),
+        );
     }
-    if let Some(root) = std::env::var_os("KICAD_CONFIG_HOME") {
-        roots.push(root.into());
-    }
-    let configuration: BTreeMap<_, _> = roots
-        .iter()
-        .flat_map(|r| {
-            [
-                "kicad_common.json",
-                "pcbnew.json",
-                "eeschema.json",
-                "sym-lib-table",
-                "fp-lib-table",
-            ]
-            .map(|name| r.join(name))
-        })
-        .filter_map(|path| {
-            fs::read(&path).ok().map(|b| {
-                let relevant = validation_settings(
-                    path.file_name().and_then(|n| n.to_str()).unwrap_or(""),
-                    &b,
+    for name in ["sym-lib-table", "fp-lib-table"] {
+        for root in &roots {
+            let path = root.join(name);
+            if let Ok(bytes) = fs::read(&path) {
+                configuration.insert(
+                    path.display().to_string(),
+                    format!("{:x}", Sha256::digest(validation_settings(name, Some(&bytes)))),
                 );
-                (path, format!("{:x}", Sha256::digest(relevant)))
-            })
-        })
-        .collect();
+            }
+        }
+    }
     json!([
-        "routing-validation-v2",
+        "routing-validation-v3",
         std::env::var_os("KIL_KICAD_PYTHON"),
         cli,
         Command::new(cli)
@@ -1320,23 +1333,35 @@ mod tests {
         let mut next = first.clone();
         next["system"]["working_dir"] = json!("two");
         assert_eq!(
-            validation_settings("kicad_common.json", &serde_json::to_vec(&first).unwrap()),
-            validation_settings("kicad_common.json", &serde_json::to_vec(&next).unwrap())
+            validation_settings("kicad_common.json", Some(&serde_json::to_vec(&first).unwrap())),
+            validation_settings("kicad_common.json", Some(&serde_json::to_vec(&next).unwrap()))
         );
         next["system"]["language"] = json!("pl");
         assert_ne!(
-            validation_settings("kicad_common.json", &serde_json::to_vec(&first).unwrap()),
-            validation_settings("kicad_common.json", &serde_json::to_vec(&next).unwrap())
+            validation_settings("kicad_common.json", Some(&serde_json::to_vec(&first).unwrap())),
+            validation_settings("kicad_common.json", Some(&serde_json::to_vec(&next).unwrap()))
         );
         assert_ne!(
             validation_settings(
                 "pcbnew.json",
-                br#"{"DRC":{"report_all_track_errors":true}}"#
+                Some(br#"{"DRC":{"report_all_track_errors":true}}"#)
             ),
             validation_settings(
                 "pcbnew.json",
-                br#"{"DRC":{"report_all_track_errors":false}}"#
+                Some(br#"{"DRC":{"report_all_track_errors":false}}"#)
             )
+        );
+        assert_eq!(
+            validation_settings("pcbnew.json", None),
+            validation_settings("pcbnew.json", Some(b"{}"))
+        );
+        assert_eq!(
+            validation_settings("kicad_common.json", None),
+            validation_settings("kicad_common.json", Some(b"{}"))
+        );
+        assert_eq!(
+            validation_settings("eeschema.json", None),
+            validation_settings("eeschema.json", Some(b"{}"))
         );
     }
     #[cfg(unix)]

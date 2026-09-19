@@ -61,9 +61,16 @@ jobs:
           sudo add-apt-repository --yes ppa:kicad/kicad-10.0-releases
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends kicad kicad-symbols kicad-footprints
-          mkdir -p "$HOME/.config/kicad/10.0"
-          cp /usr/share/kicad/template/sym-lib-table "$HOME/.config/kicad/10.0/sym-lib-table"
-          cp /usr/share/kicad/template/fp-lib-table "$HOME/.config/kicad/10.0/fp-lib-table"
+          config_home="$RUNNER_TEMP/kicad-config"
+          mkdir -p "$config_home"
+          cp /usr/share/kicad/template/sym-lib-table "$config_home/sym-lib-table"
+          cp /usr/share/kicad/template/fp-lib-table "$config_home/fp-lib-table"
+          # Pref files must exist before tests: first headless runs create them and
+          # would otherwise shift validation-cache identity between route attempts.
+          printf '%s\n' '{"environment":{"vars":{}},"system":{"language":"en"}}' >"$config_home/kicad_common.json"
+          printf '%s\n' '{"DRC":{"report_all_track_errors":false}}' >"$config_home/pcbnew.json"
+          printf '%s\n' '{"ERC":{"show_all_errors":false}}' >"$config_home/eeschema.json"
+          echo "KICAD_CONFIG_HOME=$config_home" >> "$GITHUB_ENV"
           kicad-cli version | tee /tmp/kicad-version.txt
           grep -Eq '^10\.' /tmp/kicad-version.txt
 
