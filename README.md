@@ -104,7 +104,9 @@ Tool selection belongs to `build.routing`, separate from PCB geometry and electr
 
 Run `kil lock FILE` to accept the current resolved symbol and footprint contents. Commit the adjacent `*.kil.lock.json`. Checks, builds, and routing require a matching lock; library changes require review and another explicit `lock` command. Locking leaves the source document unchanged.
 
-`kil route FILE` writes a derived `*.kil.routes.json` cache. `--net PATTERN` and `--block ID` select a subset. A targeted pass seeds from the valid cache and preserves unselected copper and its lock flags. Shared nets still span the full board. Stale caches require a full reroute. The router cannot change footprint placement or locked copper. KIL regenerates and checks the board from normalized cached copper before publishing that cache.
+`kil preview FILE` validates and publishes source placement without requiring or changing a route cache. Use it before routing. `kil route FILE` compares candidates against fresh KiCad DRC and updates `*.kil.routes.json` only for non-regressing progress. `--net PATTERN` and `--block ID` select nets; incompatible layer policies are partitioned automatically. Placement edits invalidate attached nets and nearby copper while preserving unaffected routes. Global changes and legacy caches without snapshots trigger conservative full invalidation. The router cannot change footprint placement or locked copper.
+
+Routing defaults to a 120-second group-loop budget, configurable with `--timeout-seconds`. Two unchanged attempts without progress require a changed input or explicit `--retry`. Connected selected nets skip KRT. Identical generated inputs reuse their validated DRC result; changed candidates always receive fresh DRC. Each attempt keeps timings, exact failing endpoints, router logs and decisions under `build/routing/PROJECT/`; `latest.json` locates the last report. `--candidate-only` retains reviewable results without publication. `--accept PATH` revalidates a saved candidate without rerunning KRT. See the [routing workflow](skills/kil/references/routing.md). See [measurements and validation boundaries](docs/routing-performance.md) for performance results and reproduction.
 
 Routing fingerprints include resolved library contents, nets, PCB geometry, rules, and routing policy. Schematic placement, values, and printed reference changes do not invalidate copper.
 
@@ -120,7 +122,7 @@ Omit `pcb.stackup` for the usual two-layer, 1.6 mm board. A four-layer board onl
 "stackup": { "layers": 4 }
 ```
 
-Layers are named `F.Cu`, `In1.Cu`, `In2.Cu`, and `B.Cu`. Routes, planes, and net-class layer restrictions use those same names. Vias remain through vias and cross every copper layer. Omitting `allowed_layers` from a net class allows all board layers; a net class must allow every board copper layer to use through vias.
+Layers are named `F.Cu`, `In1.Cu`, `In2.Cu`, and `B.Cu`. Routes, planes, and net-class layer restrictions use those same names. Vias remain through vias and cross every copper layer. Omitting `allowed_layers` allows all board track layers. Zones inherit this policy unless `zone_layers` is specified. Through-vias default to requiring both outer track layers; `allow_through_vias` independently permits or forbids them. Inner-layer planes do not require inner-layer tracks.
 
 Default copper is 0.035 mm thick, with the remaining thickness distributed evenly as FR4. These are generation defaults, not a manufacturer-approved impedance stackup. `copper_thickness` sets one thickness for every copper layer. To set each layer separately, use `copper_thicknesses` in `F.Cu`, inner-layer, then `B.Cu` order. A non-empty array overrides `copper_thickness` and must contain one positive thickness per copper layer. Existing files that only set `copper_thickness` keep the uniform behavior.
 

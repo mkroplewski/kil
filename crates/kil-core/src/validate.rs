@@ -413,6 +413,7 @@ pub fn validate_basic(project: &ResolvedProject, file: &Path, source: &str) -> V
             || class
                 .allowed_layers
                 .iter()
+                .chain(class.zone_layers.iter().flatten())
                 .any(|l| !copper_layers.contains(l))
         {
             push(
@@ -463,12 +464,12 @@ pub fn validate_basic(project: &ResolvedProject, file: &Path, source: &str) -> V
         if project
             .rules
             .class(&via.net)
-            .is_some_and(|c| copper_layers.iter().any(|l| !c.allows(l)))
+            .is_some_and(|c| !c.allows_vias())
         {
             push(
                 Diagnostic::error(
                     "RULE005",
-                    format!("through via on '{}' crosses a forbidden layer", via.net),
+                    format!("through via on '{}' is forbidden by its net class", via.net),
                     file,
                 ),
                 "/pcb/vias".into(),
@@ -479,7 +480,7 @@ pub fn validate_basic(project: &ResolvedProject, file: &Path, source: &str) -> V
         if project
             .rules
             .class(&zone.net)
-            .is_some_and(|c| !c.allows(&zone.layer))
+            .is_some_and(|c| !c.allows_zone(&zone.layer))
         {
             push(
                 Diagnostic::error(
@@ -762,6 +763,8 @@ mod tests {
                 minimum_track_width: 0.3,
                 preferred_track_width: 0.4,
                 allowed_layers: vec!["F.Cu".into()],
+                zone_layers: None,
+                allow_through_vias: None,
             },
         );
         project.pcb.routes["SIGNAL"][0].width = Some(0.2);
@@ -792,6 +795,7 @@ mod tests {
                 .any(|d| d.code == "RULE005")
         );
         project.rules.net_classes["signals"].allowed_layers = vec!["F.Cu".into(), "B.Cu".into()];
+        project.pcb.stackup.layers = 4;
         assert!(
             !validate_basic(&project, Path::new("test.json"), "")
                 .iter()

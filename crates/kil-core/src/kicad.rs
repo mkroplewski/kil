@@ -424,7 +424,7 @@ fn pcb_node(project: &ResolvedProject, libraries: &ResolvedLibraries) -> Node {
         root.push(list(vec![
             sym("net"),
             sym(code.to_string()),
-            quoted(schematic_net_name(name)),
+            quoted(schematic_net_name(project, name)),
         ]));
     }
     for (reference, component) in &project.components {
@@ -571,7 +571,10 @@ fn pcb_node(project: &ResolvedProject, libraries: &ResolvedLibraries) -> Node {
         root.push(list(vec![
             sym("zone"),
             list(vec![sym("net"), sym(code.to_string())]),
-            list(vec![sym("net_name"), quoted(schematic_net_name(&zone.net))]),
+            list(vec![
+                sym("net_name"),
+                quoted(schematic_net_name(project, &zone.net)),
+            ]),
             list(vec![sym("layer"), quoted(&zone.layer)]),
             list(vec![
                 sym("uuid"),
@@ -766,7 +769,7 @@ fn placed_footprint(
                 list(vec![
                     sym("net"),
                     sym(code.to_string()),
-                    quoted(schematic_net_name(net_name)),
+                    quoted(schematic_net_name(project, net_name)),
                 ]),
             );
         }
@@ -849,7 +852,7 @@ fn project_json(project: &ResolvedProject) -> String {
             class
                 .nets
                 .iter()
-                .map(move |net| (schematic_net_name(net), json!([name])))
+                .map(move |net| (schematic_net_name(project, net), json!([name])))
         })
         .collect();
     output["net_settings"]["netclass_assignments"] = json!(assignments);
@@ -861,9 +864,19 @@ fn design_rules(project: &ResolvedProject) -> String {
     for (name, class) in &project.rules.net_classes {
         out.push_str(&format!("(rule \"{name}-width\" (condition \"A.NetClass == '{name}'\") (constraint track_width (min {})))\n",class.minimum_track_width));
         for layer in project.pcb.stackup.copper_layers() {
+            let mut disallow = Vec::new();
             if !class.allows(&layer) {
-                out.push_str(&format!("(rule \"{name}-{layer}\" (condition \"A.NetClass == '{name}'\") (layer \"{layer}\") (constraint disallow track via zone))\n"));
+                disallow.push("track");
             }
+            if !class.allows_zone(&layer) {
+                disallow.push("zone");
+            }
+            if !disallow.is_empty() {
+                out.push_str(&format!("(rule \"{name}-{layer}\" (condition \"A.NetClass == '{name}'\") (layer \"{layer}\") (constraint disallow {}))\n", disallow.join(" ")));
+            }
+        }
+        if !class.allows_vias() {
+            out.push_str(&format!("(rule \"{name}-vias\" (condition \"A.NetClass == '{name}'\") (constraint disallow via))\n"));
         }
     }
     out
@@ -904,8 +917,8 @@ fn endpoint_net_map(project: &ResolvedProject) -> BTreeMap<String, &str> {
     map
 }
 
-fn schematic_net_name(name: &str) -> String {
-    if name.starts_with('/') {
+fn schematic_net_name(project: &ResolvedProject, name: &str) -> String {
+    if name.starts_with('/') || !project.schematic.sheets.is_empty() {
         name.to_string()
     } else {
         format!("/{name}")
@@ -1543,6 +1556,8 @@ pub(crate) mod tests {
                     minimum_track_width: 0.2,
                     preferred_track_width: 0.25,
                     allowed_layers: vec!["F.Cu".into()],
+                    zone_layers: None,
+                    allow_through_vias: None,
                 },
             );
             assert_eq!(
@@ -1550,6 +1565,28 @@ pub(crate) mod tests {
                 std::io::ErrorKind::InvalidInput
             );
         }
+    }
+
+    #[test]
+    fn design_rules_allow_through_vias_between_allowed_outer_layers() {
+        let (mut project, _) = fixture();
+        project.pcb.stackup.layers = 4;
+        project.rules.net_classes.insert(
+            "signals".into(),
+            crate::model::NetClass {
+                nets: vec!["SIGNAL".into()],
+                clearance: 0.2,
+                minimum_track_width: 0.2,
+                preferred_track_width: 0.25,
+                allowed_layers: vec!["F.Cu".into(), "B.Cu".into()],
+                zone_layers: None,
+                allow_through_vias: None,
+            },
+        );
+
+        let rules = design_rules(&project);
+        assert!(rules.contains("(constraint disallow track zone)"));
+        assert!(!rules.contains("(constraint disallow track via zone)"));
     }
 
     #[test]
@@ -1643,6 +1680,18 @@ pub(crate) mod tests {
                 .schematic
                 .contains("(property \"Value\" \"R99\"")
         );
+    }
+
+    #[test]
+    fn pcb_net_names_follow_schematic_label_scope() {
+        let (mut project, _) = fixture();
+
+        assert_eq!(schematic_net_name(&project, "SIGNAL"), "/SIGNAL");
+        assert_eq!(schematic_net_name(&project, "/PRIVATE"), "/PRIVATE");
+
+        project.schematic.sheets.insert("channel/main".into());
+        assert_eq!(schematic_net_name(&project, "SIGNAL"), "SIGNAL");
+        assert_eq!(schematic_net_name(&project, "/PRIVATE"), "/PRIVATE");
     }
 
     #[test]

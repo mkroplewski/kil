@@ -6,12 +6,12 @@ use kiutils_kicad::{
     FootprintFile, FpLibTableFile, SymLibTableFile, Symbol, SymbolLibDocument, SymbolLibFile,
 };
 use kiutils_sexpr::{Atom, Node};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolvedPin {
     pub unit: u32,
     pub number: String,
@@ -32,7 +32,7 @@ pub struct LibrarySymbolInfo {
     pub pins: Vec<ResolvedPin>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolvedComponent {
     pub symbol_id: String,
     pub footprint_id: String,
@@ -42,7 +42,7 @@ pub struct ResolvedComponent {
     pub pads: BTreeSet<String>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ResolvedLibraries {
     pub power_flag: Option<Node>,
     pub components: IndexMap<String, ResolvedComponent>,
@@ -203,6 +203,70 @@ impl LibraryResolver {
         })?;
         let path = base.join(format!("{entry}.kicad_mod"));
         path.is_file().then_some(path)
+    }
+
+    /// Resolve paths and hash actual dependency contents on every call. Only the
+    /// expensive parsing/inheritance work is reused; metadata alone is not proof.
+    fn resolution_key(&self, project: &ResolvedProject) -> Option<String> {
+        use sha2::{Digest, Sha256};
+        let mut paths = BTreeSet::new();
+        let mut identities = Vec::new();
+        for (id, component) in &project.components {
+            paths.insert(self.symbol_path(&component.symbol)?.0);
+            paths.insert(self.footprint_path(&component.footprint)?);
+            identities.push((id, &component.symbol, &component.footprint));
+        }
+        if !project.power_sources.is_empty() {
+            paths.insert(self.symbol_path("power:PWR_FLAG")?.0);
+        }
+        let mut hash = Sha256::new();
+        hash.update(
+            serde_json::to_vec(&(
+                1,
+                env!("CARGO_PKG_VERSION"),
+                identities,
+                !project.power_sources.is_empty(),
+            ))
+            .ok()?,
+        );
+        for path in paths {
+            let bytes = std::fs::read(&path).ok()?;
+            hash.update(serde_json::to_vec(&path).ok()?);
+            hash.update((bytes.len() as u64).to_le_bytes());
+            hash.update(bytes);
+        }
+        Some(format!("{:x}", hash.finalize()))
+    }
+
+    pub fn resolve_cached(
+        &self,
+        project: &ResolvedProject,
+        file: &Path,
+        source: &str,
+    ) -> (ResolvedLibraries, Vec<Diagnostic>, bool) {
+        let key = self.resolution_key(project);
+        let cache = key.as_ref().map(|key| {
+            self.project_dir
+                .join("build/library-cache")
+                .join(format!("{key}.json"))
+        });
+        if let Some(path) = &cache
+            && let Ok(bytes) = std::fs::read(path)
+            && let Ok(libraries) = serde_json::from_slice(&bytes)
+        {
+            return (libraries, Vec::new(), true);
+        }
+        let (libraries, diagnostics) = self.resolve_all(project, file, source);
+        // Do not cache failures or a library edited during resolution.
+        if diagnostics.is_empty()
+            && key.is_some()
+            && key == self.resolution_key(project)
+            && let Some(path) = cache
+            && std::fs::create_dir_all(path.parent().unwrap()).is_ok()
+        {
+            let _ = crate::route_workflow::write_json_atomic(&path, &libraries);
+        }
+        (libraries, diagnostics, false)
     }
 
     pub fn resolve_all(
@@ -603,6 +667,63 @@ mod tests {
 
     fn list(items: Vec<Node>) -> Node {
         Node::List { items, span: ZERO }
+    }
+
+    #[test]
+    fn resolution_cache_verifies_content_paths_and_corruption() {
+        let dir = tempfile::tempdir().unwrap();
+        let sym = dir.path().join("test.kicad_sym");
+        std::fs::write(&sym, include_str!("../testdata/test.kicad_sym")).unwrap();
+        let fp = dir.path().join("test.pretty");
+        std::fs::create_dir(&fp).unwrap();
+        std::fs::write(
+            fp.join("R.kicad_mod"),
+            include_str!("../testdata/R.kicad_mod"),
+        )
+        .unwrap();
+        let mut project: ResolvedProject =
+            serde_json::from_str(include_str!("../testdata/resolved/two-resistors.kil.json"))
+                .unwrap();
+        project.power_sources.clear();
+        for component in project.components.values_mut() {
+            component.symbol = "test:R".into();
+            component.footprint = "test:R".into();
+        }
+        let mut resolver = LibraryResolver::discover(dir.path(), None);
+        resolver.symbol_tables.insert("test".into(), sym.clone());
+        resolver.footprint_tables.insert("test".into(), fp.clone());
+        let file = dir.path().join("project.kil.json");
+        let (first, errors, hit) = resolver.resolve_cached(&project, &file, "{}");
+        assert!(errors.is_empty(), "{errors:?}");
+        assert!(!hit);
+        let (second, errors, hit) = resolver.resolve_cached(&project, &file, "{}");
+        assert!(errors.is_empty());
+        assert!(hit);
+        assert_eq!(
+            crate::lock::snapshot(&first),
+            crate::lock::snapshot(&second)
+        );
+        crate::lock::write(&file, &first).unwrap();
+        let path = fp.join("R.kicad_mod");
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(&path, text.replace("(size 0.8 0.9)", "(size 0.9 0.9)")).unwrap();
+        let (changed, _, hit) = resolver.resolve_cached(&project, &file, "{}");
+        assert!(!hit);
+        assert!(crate::lock::verify(&file, &changed).is_err());
+        let key = resolver.resolution_key(&project).unwrap();
+        std::fs::write(
+            dir.path()
+                .join("build/library-cache")
+                .join(format!("{key}.json")),
+            b"broken",
+        )
+        .unwrap();
+        assert!(!resolver.resolve_cached(&project, &file, "{}").2);
+        assert!(resolver.resolve_cached(&project, &file, "{}").2);
+        let other = dir.path().join("other.kicad_sym");
+        std::fs::copy(&sym, &other).unwrap();
+        resolver.symbol_tables.insert("test".into(), other);
+        assert!(!resolver.resolve_cached(&project, &file, "{}").2);
     }
 
     #[test]

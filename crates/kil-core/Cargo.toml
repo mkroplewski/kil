@@ -23,5 +23,8 @@ tempfile.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 tempfile.workspace = true

@@ -1,0 +1,390 @@
+{
+  "date": "2026-09-18",
+  "fixture": "examples/routed-divider.kil.json",
+  "kicad": "10.0.5",
+  "krt": "0.21.4",
+  "build_profile": "release",
+  "quieter_sample": {
+    "medians_seconds": {
+      "before/cold": 8.187,
+      "before/unchanged": 4.549,
+      "after/cold": 7.444,
+      "after/unchanged": 0.42
+    },
+    "runs": [
+      {
+        "implementation": "before",
+        "trial": 0,
+        "phase": "cold",
+        "seconds": 8.187,
+        "exit": 0,
+        "status": null,
+        "timings_ms": null,
+        "baseline_reused": null
+      },
+      {
+        "implementation": "before",
+        "trial": 0,
+        "phase": "unchanged",
+        "seconds": 4.549,
+        "exit": 0,
+        "status": null,
+        "timings_ms": null,
+        "baseline_reused": null
+      },
+      {
+        "implementation": "after",
+        "trial": 0,
+        "phase": "cold",
+        "seconds": 6.535,
+        "exit": 0,
+        "status": "accepted",
+        "timings_ms": {
+          "baseline_drc": 1434,
+          "group_validation": 1434,
+          "prepare": 109,
+          "router": 2348,
+          "schematic": 2024,
+          "total": 6068
+        },
+        "baseline_reused": false
+      },
+      {
+        "implementation": "after",
+        "trial": 0,
+        "phase": "unchanged",
+        "seconds": 0.365,
+        "exit": 0,
+        "status": "unchanged",
+        "timings_ms": {
+          "baseline_drc": 0,
+          "group_validation": 0,
+          "prepare": 88,
+          "router": 0,
+          "schematic": 135,
+          "total": 360
+        },
+        "baseline_reused": true
+      },
+      {
+        "implementation": "before",
+        "trial": 1,
+        "phase": "cold",
+        "seconds": 6.237,
+        "exit": 0,
+        "status": null,
+        "timings_ms": null,
+        "baseline_reused": null
+      },
+      {
+        "implementation": "before",
+        "trial": 1,
+        "phase": "unchanged",
+        "seconds": 4.526,
+        "exit": 0,
+        "status": null,
+        "timings_ms": null,
+        "baseline_reused": null
+      },
+      {
+        "implementation": "after",
+        "trial": 1,
+        "phase": "cold",
+        "seconds": 8.511,
+        "exit": 0,
+        "status": "accepted",
+        "timings_ms": {
+          "baseline_drc": 1422,
+          "group_validation": 2028,
+          "prepare": 99,
+          "router": 3883,
+          "schematic": 2330,
+          "total": 8504
+        },
+        "baseline_reused": false
+      },
+      {
+        "implementation": "after",
+        "trial": 1,
+        "phase": "unchanged",
+        "seconds": 0.42,
+        "exit": 0,
+        "status": "unchanged",
+        "timings_ms": {
+          "baseline_drc": 0,
+          "group_validation": 0,
+          "prepare": 103,
+          "router": 0,
+          "schematic": 155,
+          "total": 415
+        },
+        "baseline_reused": true
+      },
+      {
+        "implementation": "before",
+        "trial": 2,
+        "phase": "cold",
+        "seconds": 8.549,
+        "exit": 0,
+        "status": null,
+        "timings_ms": null,
+        "baseline_reused": null
+      },
+      {
+        "implementation": "before",
+        "trial": 2,
+        "phase": "unchanged",
+        "seconds": 5.729,
+        "exit": 0,
+        "status": null,
+        "timings_ms": null,
+        "baseline_reused": null
+      },
+      {
+        "implementation": "after",
+        "trial": 2,
+        "phase": "cold",
+        "seconds": 7.444,
+        "exit": 0,
+        "status": "accepted",
+        "timings_ms": {
+          "baseline_drc": 1633,
+          "group_validation": 1723,
+          "prepare": 104,
+          "router": 2777,
+          "schematic": 2669,
+          "total": 7436
+        },
+        "baseline_reused": false
+      },
+      {
+        "implementation": "after",
+        "trial": 2,
+        "phase": "unchanged",
+        "seconds": 0.488,
+        "exit": 0,
+        "status": "unchanged",
+        "timings_ms": {
+          "baseline_drc": 0,
+          "group_validation": 0,
+          "prepare": 114,
+          "router": 0,
+          "schematic": 183,
+          "total": 483
+        },
+        "baseline_reused": true
+      }
+    ]
+  },
+  "loaded_sample": {
+    "medians_seconds": {
+      "before/cold": 31.002,
+      "before/unchanged": 21.987,
+      "after/cold": 30.286,
+      "after/unchanged": 1.672
+    },
+    "runs": [
+      {
+        "implementation": "before",
+        "trial": 0,
+        "phase": "cold",
+        "seconds": 27.796,
+        "exit": 0,
+        "status": null,
+        "timings_ms": null,
+        "baseline_reused": null
+      },
+      {
+        "implementation": "before",
+        "trial": 0,
+        "phase": "unchanged",
+        "seconds": 15.327,
+        "exit": 0,
+        "status": null,
+        "timings_ms": null,
+        "baseline_reused": null
+      },
+      {
+        "implementation": "after",
+        "trial": 0,
+        "phase": "cold",
+        "seconds": 30.286,
+        "exit": 0,
+        "status": "accepted",
+        "timings_ms": {
+          "baseline_drc": 7398,
+          "group_validation": 5638,
+          "prepare": 354,
+          "router": 12202,
+          "schematic": 10591,
+          "total": 29915
+        },
+        "baseline_reused": false
+      },
+      {
+        "implementation": "after",
+        "trial": 0,
+        "phase": "unchanged",
+        "seconds": 4.325,
+        "exit": 0,
+        "status": "unchanged",
+        "timings_ms": {
+          "baseline_drc": 1,
+          "group_validation": 0,
+          "prepare": 1399,
+          "router": 0,
+          "schematic": 0,
+          "total": 4304
+        },
+        "baseline_reused": true
+      },
+      {
+        "implementation": "before",
+        "trial": 1,
+        "phase": "cold",
+        "seconds": 31.002,
+        "exit": 0,
+        "status": null,
+        "timings_ms": null,
+        "baseline_reused": null
+      },
+      {
+        "implementation": "before",
+        "trial": 1,
+        "phase": "unchanged",
+        "seconds": 29.465,
+        "exit": 0,
+        "status": null,
+        "timings_ms": null,
+        "baseline_reused": null
+      },
+      {
+        "implementation": "after",
+        "trial": 1,
+        "phase": "cold",
+        "seconds": 38.532,
+        "exit": 0,
+        "status": "accepted",
+        "timings_ms": {
+          "baseline_drc": 11589,
+          "group_validation": 7522,
+          "prepare": 1014,
+          "router": 16558,
+          "schematic": 12054,
+          "total": 38488
+        },
+        "baseline_reused": false
+      },
+      {
+        "implementation": "after",
+        "trial": 1,
+        "phase": "unchanged",
+        "seconds": 1.672,
+        "exit": 0,
+        "status": "unchanged",
+        "timings_ms": {
+          "baseline_drc": 0,
+          "group_validation": 0,
+          "prepare": 914,
+          "router": 0,
+          "schematic": 0,
+          "total": 1630
+        },
+        "baseline_reused": true
+      },
+      {
+        "implementation": "before",
+        "trial": 2,
+        "phase": "cold",
+        "seconds": 32.154,
+        "exit": 0,
+        "status": null,
+        "timings_ms": null,
+        "baseline_reused": null
+      },
+      {
+        "implementation": "before",
+        "trial": 2,
+        "phase": "unchanged",
+        "seconds": 21.987,
+        "exit": 0,
+        "status": null,
+        "timings_ms": null,
+        "baseline_reused": null
+      },
+      {
+        "implementation": "after",
+        "trial": 2,
+        "phase": "cold",
+        "seconds": 23.059,
+        "exit": 0,
+        "status": "accepted",
+        "timings_ms": {
+          "baseline_drc": 5356,
+          "group_validation": 5452,
+          "prepare": 1330,
+          "router": 7350,
+          "schematic": 8268,
+          "total": 23034
+        },
+        "baseline_reused": false
+      },
+      {
+        "implementation": "after",
+        "trial": 2,
+        "phase": "unchanged",
+        "seconds": 1.011,
+        "exit": 0,
+        "status": "unchanged",
+        "timings_ms": {
+          "baseline_drc": 0,
+          "group_validation": 0,
+          "prepare": 491,
+          "router": 0,
+          "schematic": 2,
+          "total": 992
+        },
+        "baseline_reused": true
+      }
+    ]
+  },
+  "amplifier_connected_net": [
+    {
+      "phase": "cold",
+      "seconds": 31.601,
+      "exit": 2,
+      "status": "unchanged",
+      "reason": "selected nets are connected",
+      "errors": 4,
+      "opens": 97,
+      "baseline_reused": false,
+      "timings_ms": {
+        "baseline_drc": 14205,
+        "group_validation": 0,
+        "normalization_drc": 12337,
+        "prepare": 1004,
+        "router": 0,
+        "schematic": 12745,
+        "total": 31583
+      }
+    },
+    {
+      "phase": "unchanged",
+      "seconds": 1.863,
+      "exit": 2,
+      "status": "unchanged",
+      "reason": "selected nets are connected",
+      "errors": 4,
+      "opens": 97,
+      "baseline_reused": true,
+      "timings_ms": {
+        "baseline_drc": 15,
+        "group_validation": 0,
+        "prepare": 1079,
+        "router": 0,
+        "schematic": 11,
+        "total": 1844
+      }
+    }
+  ]
+}
