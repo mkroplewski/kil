@@ -50,6 +50,8 @@ New accepted caches record the source geometry used to route them. Moving a comp
 
 Changes to rules, libraries, topology, outline, zones, keepouts or seed copper conservatively discard cached copper and select all nets. Legacy caches without a source snapshot also require this full invalidation. `kil check` still rejects a stale cache; `kil route` performs the controlled update. Never move an old cache into source merely to bypass invalidation.
 
+After upgrading KIL, existing `*.routes.json` files may report `ROUTE006` because the fingerprint now includes per-component footprint IDs. Run `kil route FILE` once to regenerate the cache under the current recipe; until then, `kil check` and `kil build` reject the stale cache.
+
 ## Layer and fabrication policy
 
 `allowed_layers` controls tracks and, by default, zones. `zone_layers` independently overrides zone layers. An empty list allows all declared layers. `allow_through_vias` overrides the default policy, which permits through-vias only when both outer track layers are allowed.

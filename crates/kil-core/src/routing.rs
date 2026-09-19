@@ -35,6 +35,11 @@ pub struct RouterIdentity {
     pub version: Option<String>,
 }
 
+/// Fingerprint of routing inputs for cache validity.
+///
+/// Pre-upgrade `*.routes.json` files used an older recipe (without per-component
+/// footprint IDs). After upgrading, `kil check` / `kil build` report `ROUTE006`
+/// until a one-time `kil route` regenerates the cache under this recipe.
 pub fn routing_fingerprint(project: &ResolvedProject) -> String {
     let encoded = serde_json::to_vec(&serde_json::json!({
         "compiler": env!("CARGO_PKG_VERSION"),

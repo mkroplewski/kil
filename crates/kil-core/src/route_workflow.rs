@@ -211,6 +211,7 @@ pub fn snapshot(project: &ResolvedProject, libraries: &crate::library::ResolvedL
             let lib = libraries.components.get(id)?;
             // A conservative rotation-independent envelope includes pads and graphics.
             // False positives cost a reroute; false negatives could preserve stale copper.
+            // Include arc `mid`/`center` so bulging arcs are not under-bounded by endpoints alone.
             let mut radius: f64 = 0.0;
             fn visit(node: &kiutils_sexpr::Node, radius: &mut f64) {
                 use kiutils_sexpr::{Atom, Node};
@@ -226,7 +227,7 @@ pub fn snapshot(project: &ResolvedProject, libraries: &crate::library::ResolvedL
                 if let Node::List { items, .. } = node {
                     if matches!(
                         items.first().and_then(atom),
-                        Some("at" | "start" | "end" | "xy" | "size")
+                        Some("at" | "start" | "end" | "mid" | "center" | "xy" | "size")
                     ) && let (Some(x), Some(y)) = (
                         items
                             .get(1)
@@ -1130,6 +1131,36 @@ mod tests {
         fs::write(&path, "{\"violations\":[]}").unwrap();
         assert!(DrcSummary::read(&path).is_err());
     }
+    #[test]
+    fn footprint_envelope_includes_arc_midpoints() {
+        let (project, mut libraries) = crate::kicad::tests::fixture();
+        let without = snapshot(&project, &libraries);
+        let without_bounds: [f64; 4] =
+            serde_json::from_value(without["bounds"]["R1"].clone()).unwrap();
+        let without_radius = (without_bounds[2] - without_bounds[0]) / 2.0;
+        let arc = kiutils_sexpr::parse_one(
+            r#"(fp_arc (start 1 0) (mid 0 20) (end -1 0) (layer "F.SilkS") (width 0.12))"#,
+        )
+        .unwrap()
+        .nodes
+        .into_iter()
+        .next()
+        .expect("arc node");
+        let kiutils_sexpr::Node::List { items, .. } =
+            &mut libraries.components["R1"].footprint_node
+        else {
+            panic!("expected footprint list");
+        };
+        items.push(arc);
+        let with = snapshot(&project, &libraries);
+        let with_bounds: [f64; 4] = serde_json::from_value(with["bounds"]["R1"].clone()).unwrap();
+        let with_radius = (with_bounds[2] - with_bounds[0]) / 2.0;
+        assert!(
+            with_radius > without_radius + 10.0,
+            "arc mid should expand envelope: {without_radius} -> {with_radius}"
+        );
+    }
+
     #[test]
     fn placement_rebase_invalidates_connected_and_crossing_nets_only() {
         let (mut project, libraries) = crate::kicad::tests::fixture();
