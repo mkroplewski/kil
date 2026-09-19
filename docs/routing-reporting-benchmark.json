@@ -1,0 +1,239 @@
+{
+  "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+  "project": "examples/routed-divider.kil.json",
+  "binaries": {
+    "before": "prior optimized routing implementation",
+    "after": "reporting and library-cache follow-up"
+  },
+  "kiCad": "10.0.5",
+  "medians_seconds": {
+    "before/cold": 6.747,
+    "before/unchanged": 0.248,
+    "after/cold": 6.733,
+    "after/unchanged": 0.233
+  },
+  "runs": [
+    {
+      "implementation": "before",
+      "trial": 0,
+      "phase": "cold",
+      "seconds": 6.747,
+      "exit": 0,
+      "status": "accepted",
+      "timings_ms": {
+        "baseline_drc": 2303,
+        "group_validation": 1427,
+        "prepare": 137,
+        "router": 2523,
+        "schematic": 2357,
+        "total": 6738
+      },
+      "baseline_reused": false
+    },
+    {
+      "implementation": "before",
+      "trial": 0,
+      "phase": "unchanged",
+      "seconds": 0.235,
+      "exit": 0,
+      "status": "unchanged",
+      "timings_ms": {
+        "baseline_drc": 0,
+        "group_validation": 0,
+        "prepare": 93,
+        "router": 0,
+        "schematic": 0,
+        "total": 229
+      },
+      "baseline_reused": true
+    },
+    {
+      "implementation": "after",
+      "trial": 0,
+      "phase": "cold",
+      "seconds": 6.649,
+      "exit": 0,
+      "status": "accepted",
+      "timings_ms": {
+        "baseline_drc": 2180,
+        "generation": 0,
+        "group_validation": 1727,
+        "library_resolution": 24,
+        "pcb_validation": 3146,
+        "prepare": 118,
+        "router": 2267,
+        "schematic": 1805,
+        "total": 6430,
+        "zone_fill": 758
+      },
+      "baseline_reused": false
+    },
+    {
+      "implementation": "after",
+      "trial": 0,
+      "phase": "unchanged",
+      "seconds": 0.233,
+      "exit": 0,
+      "status": "unchanged",
+      "timings_ms": {
+        "baseline_drc": 0,
+        "generation": 0,
+        "group_validation": 0,
+        "library_resolution": 5,
+        "prepare": 85,
+        "router": 0,
+        "schematic": 0,
+        "total": 228
+      },
+      "baseline_reused": true
+    },
+    {
+      "implementation": "before",
+      "trial": 1,
+      "phase": "cold",
+      "seconds": 7.717,
+      "exit": 0,
+      "status": "accepted",
+      "timings_ms": {
+        "baseline_drc": 2006,
+        "group_validation": 1543,
+        "prepare": 83,
+        "router": 3881,
+        "schematic": 2045,
+        "total": 7708
+      },
+      "baseline_reused": false
+    },
+    {
+      "implementation": "before",
+      "trial": 1,
+      "phase": "unchanged",
+      "seconds": 0.662,
+      "exit": 0,
+      "status": "unchanged",
+      "timings_ms": {
+        "baseline_drc": 0,
+        "group_validation": 0,
+        "prepare": 273,
+        "router": 0,
+        "schematic": 0,
+        "total": 640
+      },
+      "baseline_reused": true
+    },
+    {
+      "implementation": "after",
+      "trial": 1,
+      "phase": "cold",
+      "seconds": 6.733,
+      "exit": 0,
+      "status": "accepted",
+      "timings_ms": {
+        "baseline_drc": 2293,
+        "generation": 0,
+        "group_validation": 1823,
+        "library_resolution": 28,
+        "pcb_validation": 3276,
+        "prepare": 108,
+        "router": 2348,
+        "schematic": 1915,
+        "total": 6729,
+        "zone_fill": 838
+      },
+      "baseline_reused": false
+    },
+    {
+      "implementation": "after",
+      "trial": 1,
+      "phase": "unchanged",
+      "seconds": 0.232,
+      "exit": 0,
+      "status": "unchanged",
+      "timings_ms": {
+        "baseline_drc": 0,
+        "generation": 0,
+        "group_validation": 0,
+        "library_resolution": 5,
+        "prepare": 83,
+        "router": 0,
+        "schematic": 0,
+        "total": 227
+      },
+      "baseline_reused": true
+    },
+    {
+      "implementation": "before",
+      "trial": 2,
+      "phase": "cold",
+      "seconds": 6.026,
+      "exit": 0,
+      "status": "accepted",
+      "timings_ms": {
+        "baseline_drc": 1646,
+        "group_validation": 1490,
+        "prepare": 85,
+        "router": 2323,
+        "schematic": 1966,
+        "total": 6019
+      },
+      "baseline_reused": false
+    },
+    {
+      "implementation": "before",
+      "trial": 2,
+      "phase": "unchanged",
+      "seconds": 0.248,
+      "exit": 0,
+      "status": "unchanged",
+      "timings_ms": {
+        "baseline_drc": 0,
+        "group_validation": 0,
+        "prepare": 96,
+        "router": 0,
+        "schematic": 0,
+        "total": 243
+      },
+      "baseline_reused": true
+    },
+    {
+      "implementation": "after",
+      "trial": 2,
+      "phase": "cold",
+      "seconds": 6.759,
+      "exit": 0,
+      "status": "accepted",
+      "timings_ms": {
+        "baseline_drc": 2230,
+        "generation": 0,
+        "group_validation": 1835,
+        "library_resolution": 26,
+        "pcb_validation": 3239,
+        "prepare": 99,
+        "router": 2444,
+        "schematic": 1548,
+        "total": 6755,
+        "zone_fill": 824
+      },
+      "baseline_reused": false
+    },
+    {
+      "implementation": "after",
+      "trial": 2,
+      "phase": "unchanged",
+      "seconds": 0.235,
+      "exit": 0,
+      "status": "unchanged",
+      "timings_ms": {
+        "baseline_drc": 0,
+        "generation": 0,
+        "group_validation": 0,
+        "library_resolution": 5,
+        "prepare": 86,
+        "router": 0,
+        "schematic": 0,
+        "total": 230
+      },
+      "baseline_reused": true
+    }
+  ]
+}

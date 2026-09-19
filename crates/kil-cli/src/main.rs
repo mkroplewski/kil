@@ -31,6 +31,12 @@ enum OutputFormat {
 enum Commands {
     /// Validate IL, resolve libraries, generate in a temporary directory and run KiCad checks.
     Check { file: PathBuf },
+    /// Validate and publish an unrouted placement preview without a route cache.
+    Preview {
+        file: PathBuf,
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
     /// Accept the current resolved symbol and footprint contents.
     Lock { file: PathBuf },
     /// Compile and publish a KiCad project.
@@ -54,6 +60,18 @@ enum Commands {
         /// Route all nets owned by one imported block.
         #[arg(long, conflicts_with = "nets")]
         block: Option<String>,
+        /// Wall-clock routing budget in seconds across all net groups.
+        #[arg(long, default_value_t = 120, value_parser = clap::value_parser!(u64).range(1..))]
+        timeout_seconds: u64,
+        /// Deliberately repeat after two unchanged attempts made no progress.
+        #[arg(long)]
+        retry: bool,
+        /// Keep results for review without changing accepted copper.
+        #[arg(long)]
+        candidate_only: bool,
+        /// Revalidate and accept a saved candidate without invoking the router.
+        #[arg(long, conflicts_with = "candidate_only")]
+        accept: Option<PathBuf>,
     },
     /// Print a compact, read-only JSON view of a project, block, net, component or PCB region.
     Inspect {
@@ -128,12 +146,24 @@ fn main() -> Result<()> {
             }),
             cli.diagnostics,
         ),
+        Commands::Preview { file, out } => finish(
+            kil_core::preview(&BuildOptions {
+                input: file,
+                output: out,
+                kicad_cli: cli.kicad_cli,
+            }),
+            cli.diagnostics,
+        ),
         Commands::Route {
             file,
             krt,
             python,
             nets,
             block,
+            timeout_seconds,
+            retry,
+            candidate_only,
+            accept,
         } => finish_route(
             kil_core::route(&RouteOptions {
                 input: file,
@@ -142,6 +172,10 @@ fn main() -> Result<()> {
                 python,
                 nets,
                 block,
+                timeout_seconds,
+                retry,
+                candidate_only,
+                accept,
             }),
             cli.diagnostics,
         ),
@@ -249,8 +283,30 @@ fn finish_route(outcome: RouteOutcome, format: OutputFormat) -> Result<()> {
                 );
             }
             if let Some(path) = &outcome.cache_file {
-                println!("routed {}", path.display());
+                println!("accepted {}", path.display());
             }
+            println!(
+                "{}: {} (opens {} -> {}, DRC errors {} -> {})",
+                outcome.report.status,
+                outcome.report.reason,
+                outcome.report.before.opens.len(),
+                outcome.report.after.opens.len(),
+                outcome.report.before.errors.len(),
+                outcome.report.after.errors.len()
+            );
+            if let Some(path) = &outcome.report_file {
+                println!("report {}", path.display());
+            }
+            if let Some(path) = outcome.report.repair_views.last() {
+                println!("repair views {path}");
+            }
+            for error in &outcome.report.artifact_errors {
+                eprintln!("repair artifact unavailable: {error}");
+            }
+            println!(
+                "timings (ms): {}",
+                serde_json::to_string(&outcome.report.timings_ms)?
+            );
         }
     }
     std::process::exit(outcome.exit.code());

@@ -18,7 +18,7 @@ If the request concerns an existing native KiCad project without KIL source, exp
 
 ## Before editing
 
-Run `kil --version` to confirm the CLI is available. If it is missing, report that and offer the installation command from the project README. Do not execute a remote installer without the user's authorization.
+Run `kil --version` to confirm the CLI is available. For routing benchmarks and substantial boards, use an installed release or `cargo build --release` and `target/release/kil`, not an unoptimized debug compiler. If it is missing, report that and offer the installation command from the project README. Do not execute a remote installer without the user's authorization.
 
 Find the root KIL file and inspect only the context needed for the task. Do not rescan the whole project after each edit:
 
@@ -54,13 +54,27 @@ Before the first compiler run, verify the common structural requirements togethe
 
 Fix all independent diagnostics from a compiler run in one edit. Do not rerun `schema`, broad `inspect`, or unchanged library queries unless a diagnostic makes them relevant.
 
-Before the first build, run `kil lock FILE` to record the resolved library contents. Rerun it only to explicitly accept a reviewed library change. After editing an autorouted project, run `kil route FILE` before `kil check` whenever the cache is missing or stale. For a stale cache, reroute all nets with `kil route FILE --net '*'`, overriding any configured net selection. Then run `kil check` and `kil build`. For other edits, run:
+Before the first build, run `kil lock FILE` to record the resolved library contents. Rerun it only to explicitly accept a reviewed library change. After placement edits, run `kil preview FILE` first. It validates source geometry without requiring or changing a route cache. Then use a scoped `kil route FILE --net NAME` or `--block ID`; KIL adds nets invalidated by placement changes and retains unaffected copper. Other source changes conservatively invalidate all cached copper. Then run `kil check` and `kil build`. For other edits, run:
 
 ```console
 kil check path/to/project.kil.json
 ```
 
-For a new autorouted project that declares `build.routing` but has no route cache yet, skip this initial `check`; its missing-cache diagnostic is expected. Run `kil route` after the structural review above. The route command validates the source before invoking the router. Then run `kil build` to publish the project. Read the routing reference for incremental or selective routing.
+For a new autorouted project, run `kil preview` before routing. Never route an unrelated net just to create a cache for placement inspection. Expected opens in a preview are reported separately; placement errors still fail. Read the routing reference before autorouting.
+
+## Prototype milestones
+
+Use these as planning guidance. The agent chooses the order and scope appropriate to the design; KIL does not enforce a milestone sequence.
+
+1. Compare the handoff with the capabilities reported by `kil inspect FILE`. Identify unsupported requirements before promising a finished board. Differential impedance, pair coupling, length tuning, thermal performance and current capacity are not proved by connectivity or DRC.
+2. Establish board dimensions, connector mating edges, antenna exclusion, heatsink and mounting envelopes. Review this floorplan before ordinary routing.
+3. Run `kil preview` and resolve pad, courtyard, edge and keepout conflicts. Group independent placement fixes into one edit.
+4. Build reusable modules with local placement, pad-anchored critical routes, constraints and ports. A logical netlist split alone does not preserve physical design quality. Keep switching loops, decoupling and pin escape geometry local to their owner module.
+5. Establish critical local copper and power/ground distribution, then route ordinary signals against the same accepted board. Never overlay independently routed stages or relax rules to obtain a route.
+6. Read the route report's accepted/rejected status, open counts and DRC delta. After two unchanged failures, change placement, corridors or constraints. `--retry` deliberately overrides the guard; it is not a default recovery action.
+7. Run full `kil check` and `kil build`, then review native layers and fabrication outputs. Report connectivity, DRC and handoff requirement coverage separately. Do not describe a board with opens as DRC-clean.
+
+Reuse the latest report under `build/routing/PROJECT/latest.json` when resuming. Read the named failed group and endpoint list instead of rescanning the whole project or rerunning all nets.
 
 Treat the exit status as part of the result:
 

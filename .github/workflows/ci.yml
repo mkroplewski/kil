@@ -64,6 +64,11 @@ jobs:
           mkdir -p "$HOME/.config/kicad/10.0"
           cp /usr/share/kicad/template/sym-lib-table "$HOME/.config/kicad/10.0/sym-lib-table"
           cp /usr/share/kicad/template/fp-lib-table "$HOME/.config/kicad/10.0/fp-lib-table"
+          # Pref files must exist before tests: first headless runs create them and
+          # would otherwise shift validation-cache identity between route attempts.
+          printf '%s\n' '{"environment":{"vars":{}},"system":{"language":"en"}}' >"$HOME/.config/kicad/10.0/kicad_common.json"
+          printf '%s\n' '{"DRC":{"report_all_track_errors":false}}' >"$HOME/.config/kicad/10.0/pcbnew.json"
+          printf '%s\n' '{"ERC":{"show_all_errors":false}}' >"$HOME/.config/kicad/10.0/eeschema.json"
           kicad-cli version | tee /tmp/kicad-version.txt
           grep -Eq '^10\.' /tmp/kicad-version.txt
 

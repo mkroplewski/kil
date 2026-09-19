@@ -3,6 +3,7 @@ use crate::kicad::{generate, validate_generated};
 use crate::library::LibraryResolver;
 use crate::model::{MODULE_SCHEMA_URL, PROJECT_SCHEMA_URL, ResolvedProject};
 use crate::modules::{BlockInfo, Origin, resolve};
+use crate::route_workflow::{DrcSummary, RouteReport};
 use crate::routing::{apply_route_cache, extract_route_cache, route_cache_path, write_route_cache};
 use crate::source::{Module, Project};
 use crate::source_map::SourceMap;
@@ -15,6 +16,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{Duration, Instant};
 use tempfile::Builder;
 
 #[derive(Debug, Clone)]
@@ -43,6 +45,10 @@ pub struct RouteOptions {
     pub python: Option<PathBuf>,
     pub nets: Vec<String>,
     pub block: Option<String>,
+    pub timeout_seconds: u64,
+    pub retry: bool,
+    pub candidate_only: bool,
+    pub accept: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -86,6 +92,8 @@ pub struct RouteOutcome {
     pub exit: ExitClass,
     pub diagnostics: Vec<Diagnostic>,
     pub cache_file: Option<PathBuf>,
+    pub report_file: Option<PathBuf>,
+    pub report: RouteReport,
     #[serde(skip)]
     pub source: String,
 }
@@ -186,11 +194,26 @@ fn remap_diagnostics(diagnostics: &mut [Diagnostic], origins: &IndexMap<String, 
 }
 
 pub fn check(options: &BuildOptions) -> BuildOutcome {
-    run(options, false)
+    run(options, false, false)
 }
 
 pub fn build(options: &BuildOptions) -> BuildOutcome {
-    run(options, true)
+    run(options, true, false)
+}
+
+/// Generate source placement without consuming or requiring an autoroute cache.
+pub fn preview(options: &BuildOptions) -> BuildOutcome {
+    let mut options = options.clone();
+    if options.output.is_none() {
+        options.output = Some(
+            options
+                .input
+                .parent()
+                .unwrap_or(Path::new("."))
+                .join("build/preview"),
+        );
+    }
+    run(&options, true, true)
 }
 
 pub fn inspect(options: &InspectOptions) -> InspectOutcome {
@@ -291,6 +314,12 @@ pub fn inspect(options: &InspectOptions) -> InspectOutcome {
         Some(json!({
             "kind": "summary",
             "geometry_stage": "preliminary",
+            "routing_capabilities": {
+                "placement_preview": true, "incremental_placement_repair": true,
+                "independent_track_zone_via_policy": true,
+                "differential_pair_constraints": false, "length_tuning": false,
+                "impedance_verification": false, "blind_buried_vias": false
+            },
             "project": project.project,
             "components": project.components.len(),
             "nets": project.nets.len(),
@@ -334,7 +363,57 @@ pub fn inspect(options: &InspectOptions) -> InspectOutcome {
     }
 }
 
+fn selected_routing_layers(project: &ResolvedProject, selectors: &[String]) -> Vec<String> {
+    let mut layers = project.pcb.stackup.copper_layers();
+    for net in project
+        .nets
+        .keys()
+        .filter(|net| crate::routing::selected(selectors, net))
+    {
+        let Some(class) = project.rules.class(net) else {
+            continue;
+        };
+        if !class.allowed_layers.is_empty() {
+            layers.retain(|layer| class.allows(layer));
+        }
+    }
+    layers
+}
+
 pub fn route(options: &RouteOptions) -> RouteOutcome {
+    let start = Instant::now();
+    let mut report = RouteReport::default();
+    let mut outcome = route_inner(options, &mut report);
+    report
+        .timings_ms
+        .insert("total".into(), start.elapsed().as_millis() as u64);
+    if report.status.is_empty() {
+        report.status = "invalid".into();
+    }
+    if report.reason.is_empty() {
+        report.reason = outcome
+            .diagnostics
+            .iter()
+            .find(|d| d.severity == Severity::Error)
+            .map(|d| d.message.clone())
+            .unwrap_or_default();
+    }
+    if let Some(path) = &outcome.report_file
+        && let Err(e) = crate::route_workflow::write_json_atomic(path, &report)
+    {
+        outcome.diagnostics.push(Diagnostic::error(
+            "IO001",
+            format!("cannot save route report: {e}"),
+            path,
+        ));
+        outcome.exit = ExitClass::Invalid;
+    }
+    outcome.report = report;
+    outcome
+}
+
+fn route_inner(options: &RouteOptions, report: &mut RouteReport) -> RouteOutcome {
+    let prepare_start = Instant::now();
     let loaded = load_project(&options.input);
     let mut diagnostics = loaded.diagnostics;
     let Some(mut project) = loaded.project else {
@@ -365,7 +444,8 @@ pub fn route(options: &RouteOptions) -> RouteOutcome {
         );
         return invalid_route(diagnostics, loaded.source);
     };
-    let Some(router) = resolve_krt(options.krt.as_deref()) else {
+    let router = resolve_krt(options.krt.as_deref());
+    if router.is_none() && options.accept.is_none() {
         diagnostics.push(
             Diagnostic::error(
                 "ROUTE008",
@@ -375,9 +455,10 @@ pub fn route(options: &RouteOptions) -> RouteOutcome {
             .with_help("reinstall kil, or pass --krt PATH to a KiCadRoutingTools checkout"),
         );
         return invalid_route(diagnostics, loaded.source);
-    };
+    }
+    let router = router.unwrap_or_default();
     let python = resolve_python(options.python.as_deref());
-    if !python_works(&python) {
+    if options.accept.is_none() && !python_works(&python) {
         diagnostics.push(
             Diagnostic::error(
                 "ROUTE009",
@@ -390,7 +471,14 @@ pub fn route(options: &RouteOptions) -> RouteOutcome {
     }
     let project_dir = options.input.parent().unwrap_or_else(|| Path::new("."));
     let resolver = LibraryResolver::discover(project_dir, Some(&cli));
-    let (libraries, library_diags) = resolver.resolve_all(&project, &options.input, &loaded.source);
+    let library_start = Instant::now();
+    let (libraries, library_diags, reused) =
+        resolver.resolve_cached(&project, &options.input, &loaded.source);
+    report.library_reused = reused;
+    report.timings_ms.insert(
+        "library_resolution".into(),
+        library_start.elapsed().as_millis() as u64,
+    );
     diagnostics.extend(library_diags);
     if !has_errors(&diagnostics) {
         match crate::lock::verify(&options.input, &libraries) {
@@ -416,7 +504,7 @@ pub fn route(options: &RouteOptions) -> RouteOutcome {
     if has_errors(&diagnostics) {
         return invalid_route(diagnostics, loaded.source);
     }
-    let selected_nets = if !options.nets.is_empty() {
+    let mut selected_nets = if !options.nets.is_empty() {
         options.nets.clone()
     } else if let Some(block_id) = &options.block {
         let Some(block) = loaded.blocks.get(block_id) else {
@@ -448,272 +536,617 @@ pub fn route(options: &RouteOptions) -> RouteOutcome {
         return invalid_route(diagnostics, loaded.source);
     }
     let routing_input = project.clone();
-    if route_cache_path(&options.input, &project).is_ok_and(|p| p.is_file())
-        && let Err(d) = apply_route_cache(&mut project, &options.input)
-    {
-        let full = project
-            .nets
-            .keys()
-            .all(|n| crate::routing::selected(&selected_nets, n));
-        if !full {
-            diagnostics.push(*d);
+    let snapshot = crate::route_workflow::snapshot(&routing_input, &libraries);
+    let cache_file = route_cache_path(&options.input, &project).unwrap();
+    let run_root = project_dir
+        .join("build/routing")
+        .join(&project.project.name);
+    if let Err(e) = fs::create_dir_all(&run_root) {
+        diagnostics.push(Diagnostic::error("IO002", e.to_string(), &run_root));
+        return invalid_route(diagnostics, loaded.source);
+    }
+    let _lock = match crate::route_workflow::RunLock::acquire(&run_root) {
+        Ok(lock) => lock,
+        Err(e) => {
+            diagnostics.push(Diagnostic::error("ROUTE026", e, &options.input));
             return invalid_route(diagnostics, loaded.source);
         }
-    }
-    let route_seed = project.clone();
-    // Copper outside this operation's selection is immutable router input.
-    for (net, routes) in &mut project.pcb.routes {
-        if !crate::routing::selected(&selected_nets, net) {
-            for route in routes {
-                route.locked = true;
+    };
+    let mut cache_current = false;
+    if cache_file.is_file() {
+        match fs::read(&cache_file)
+            .map_err(|e| e.to_string())
+            .and_then(|b| {
+                serde_json::from_slice::<crate::routing::RouteCache>(&b).map_err(|e| e.to_string())
+            }) {
+            Ok(cache) if cache.format_version == 2 && cache.project == project.project.name => {
+                if cache.input_fingerprint == crate::routing::routing_fingerprint(&project) {
+                    cache_current = true;
+                    project.pcb.routes = cache.routes;
+                    project.pcb.vias = cache.vias;
+                } else {
+                    report.invalidated_nets =
+                        crate::route_workflow::rebase(&cache, &snapshot, &mut project);
+                    selected_nets.extend(report.invalidated_nets.iter().cloned());
+                }
+            }
+            _ => {
+                diagnostics.push(Diagnostic::error(
+                    "ROUTE004",
+                    "unreadable or foreign route cache; preserve it separately before routing",
+                    &cache_file,
+                ));
+                return invalid_route(diagnostics, loaded.source);
             }
         }
     }
-    for via in &mut project.pcb.vias {
-        if !crate::routing::selected(&selected_nets, &via.net) {
-            via.locked = true;
-        }
-    }
-    let staging = match Builder::new().prefix(".kil-route-").tempdir() {
-        Ok(dir) => dir,
-        Err(err) => {
-            diagnostics.push(Diagnostic::error(
-                "IO002",
-                format!("cannot create routing staging directory: {err}"),
-                &options.input,
-            ));
-            return invalid_route(diagnostics, loaded.source);
-        }
-    };
-    let baseline = staging.path().join("baseline.kicad_pcb");
-    if let Err(e) = generate(&route_seed, &libraries).and_then(|g| fs::write(&baseline, g.pcb)) {
-        diagnostics.push(Diagnostic::error("GEN001", e.to_string(), &options.input));
+    diagnostics.extend(validate_basic(&project, &options.input, &loaded.source));
+    if has_errors(&diagnostics) {
         return invalid_route(diagnostics, loaded.source);
     }
-    let before = match extract_route_cache(&route_seed, &baseline, None) {
-        Ok(cache) => cache,
+    report.selected_nets = project
+        .nets
+        .keys()
+        .filter(|n| crate::routing::selected(&selected_nets, n))
+        .cloned()
+        .collect();
+    let staging = match Builder::new().prefix("attempt-").tempdir_in(&run_root) {
+        Ok(dir) => dir.keep(),
         Err(e) => {
-            diagnostics.push(Diagnostic::error("ROUTE012", e, &options.input));
+            diagnostics.push(Diagnostic::error("IO002", e.to_string(), &run_root));
             return invalid_route(diagnostics, loaded.source);
         }
     };
-    if let Err(err) = generate(&project, &libraries)
-        .and_then(|g| g.write_to(staging.path(), &project.project.name))
-    {
-        diagnostics.push(Diagnostic::error(
-            "GEN001",
-            format!("cannot write staged project: {err}"),
-            &options.input,
-        ));
-        return invalid_route(diagnostics, loaded.source);
-    }
-    let input_board = staging
-        .path()
-        .join(format!("{}.kicad_pcb", project.project.name));
-    let pre_route_drc = staging.path().join("pre-route-drc.json");
-    if let Err(message) = run_command_extra(
-        &cli,
-        &[
-            "pcb",
-            "drc",
-            "--format",
-            "json",
-            "--severity-all",
-            "--refill-zones",
-            "--save-board",
-            "--output",
-        ],
-        Some(&pre_route_drc),
-        &input_board,
-    ) {
-        diagnostics.push(Diagnostic::error(
-            "KICAD005",
-            format!("KiCad could not prepare the staged board for routing: {message}"),
-            &options.input,
-        ));
-        return invalid_route(diagnostics, loaded.source);
-    }
-    let routed_board = staging
-        .path()
-        .join(format!("{}.routed.kicad_pcb", project.project.name));
-
-    let initial_footprints = match footprint_state(&input_board) {
-        Ok(state) => state,
-        Err(e) => {
-            diagnostics.push(Diagnostic::error("ROUTE021", e, &options.input));
-            return invalid_route(diagnostics, loaded.source);
-        }
+    let report_file = staging.join("report.json");
+    let mut outcome = RouteOutcome {
+        exit: ExitClass::Invalid,
+        diagnostics: vec![],
+        cache_file: None,
+        report_file: Some(report_file),
+        report: RouteReport::default(),
+        source: loaded.source.clone(),
     };
-    let fabrication_limits = staging.path().join("kil-fabrication-limits.txt");
-    if let Err(e) = fs::write(
-        &fabrication_limits,
-        format!(
-            "track_width = {}\nclearance = {}\nvia_diameter = {}\nvia_drill = {}\n",
-            project.rules.minimum_track_width,
-            project.rules.clearance,
-            project.rules.via_size,
-            project.rules.via_drill
-        ),
-    ) {
-        diagnostics.push(Diagnostic::error("ROUTE022", e.to_string(), &options.input));
-        return invalid_route(diagnostics, loaded.source);
-    }
-    let mut command = Command::new(&python);
-    command.arg(&router).arg(&input_board).arg(&routed_board);
-    if !selected_nets.is_empty() {
-        command.arg("--nets").args(&selected_nets);
-    }
-    command
-        .arg("--layers")
-        .args(project.pcb.stackup.copper_layers());
-    command.args(&policy.extra_args);
-    command.arg("--fab-overrides").arg(&fabrication_limits);
-    let result = match command.output() {
-        Ok(result) => result,
-        Err(err) => {
-            diagnostics.push(Diagnostic::error(
-                "ROUTE010",
-                format!("cannot start KiCadRoutingTools: {err}"),
+    // Keep every attempt and its logs. latest.json is an index, never an accepted cache.
+    let result = (|| -> Result<(), String> {
+        report
+            .timings_ms
+            .insert("prepare".into(), prepare_start.elapsed().as_millis() as u64);
+        let generated = generate_timed(&project, &libraries, &mut report.timings_ms)
+            .map_err(|e| e.to_string())?;
+        generated
+            .write_to(&staging, &project.project.name)
+            .map_err(|e| e.to_string())?;
+        let board = staging.join(format!("{}.kicad_pcb", project.project.name));
+        let identity = crate::route_workflow::validation_identity(&cli);
+        let repair_context = crate::route_workflow::RepairContext {
+            cli: &cli,
+            cache_root: &run_root,
+            identity: &identity,
+        };
+        let baseline_cache = crate::route_workflow::drc_cache_path(
+            &run_root,
+            &identity,
+            &project.library_fingerprint,
+            &generated,
+        );
+        // These checks read the same generated schematic; only PCB DRC writes
+        // the board. Run the independent processes together to avoid serial startup.
+        let (mut checks, schematic_ms, baseline, drc_ms, reused) = std::thread::scope(|scope| {
+            let schematic = scope.spawn(|| {
+                let start = Instant::now();
+                let checks = validate_schematic_cached(
+                    &cli,
+                    &staging,
+                    &run_root,
+                    &project,
+                    &options.input,
+                    &generated,
+                    &identity,
+                );
+                (checks, start.elapsed().as_millis() as u64)
+            });
+            let start = Instant::now();
+            let reused = crate::route_workflow::restore_drc(
+                &baseline_cache,
+                &board,
+                &staging.join("before.json"),
+            );
+            let baseline = if reused {
+                Ok(())
+            } else {
+                pcb_drc_timed(
+                    &cli,
+                    &board,
+                    &staging.join("before.json"),
+                    true,
+                    &mut report.timings_ms,
+                )
+            };
+            let drc_ms = start.elapsed().as_millis() as u64;
+            let (checks, schematic_ms) = schematic
+                .join()
+                .expect("schematic validation thread panicked");
+            (checks, schematic_ms, baseline, drc_ms, reused)
+        });
+        report.baseline_reused = reused;
+        report.timings_ms.insert("schematic".into(), schematic_ms);
+        report.timings_ms.insert("baseline_drc".into(), drc_ms);
+        let structurally_invalid = checks
+            .iter()
+            .any(|d| d.severity == Severity::Error && d.code.starts_with("KICAD"));
+        diagnostics.append(&mut checks);
+        if structurally_invalid {
+            return Err("schematic validation failed".into());
+        }
+        baseline?;
+        if !reused {
+            crate::route_workflow::remember_drc(
+                &baseline_cache,
+                &board,
+                &staging.join("before.json"),
+                None,
+            )?;
+        }
+        report.before = DrcSummary::read(&staging.join("before.json"))?;
+        report.after = report.before.clone();
+        if report.before.blocking_placement() {
+            repair_evidence(
+                &repair_context,
+                &board,
+                &staging.join("layers"),
+                &project,
+                &report.before.clone(),
+                report,
+            );
+            crate::route_workflow::write_repair_svg(
+                &staging.join("repair.svg"),
+                &project,
+                &report.before,
+            )?;
+            diagnostics.extend(read_kicad_report(
+                &staging.join("before.json"),
                 &options.input,
+                "DRC",
             ));
-            return invalid_route(diagnostics, loaded.source);
+            report.status = "blocked".into();
+            return Err("fix placement/copper conflicts with 'kil preview' before routing".into());
         }
-    };
-    if !result.status.success() || !routed_board.is_file() {
-        let stderr = String::from_utf8_lossy(&result.stderr).trim().to_owned();
-        let stdout = String::from_utf8_lossy(&result.stdout).trim().to_owned();
-        diagnostics.push(
-            Diagnostic::error(
-                "ROUTE011",
+        let mut accepted = extract_route_cache(&routing_input, &board, None)?;
+        accepted.snapshot = Some(snapshot.clone());
+        if let Some(candidate_path) = &options.accept {
+            let mut candidate: crate::routing::RouteCache =
+                serde_json::from_slice(&fs::read(candidate_path).map_err(|e| e.to_string())?)
+                    .map_err(|e| e.to_string())?;
+            if candidate.format_version != 2
+                || candidate.project != routing_input.project.name
+                || candidate.input_fingerprint
+                    != crate::routing::routing_fingerprint(&routing_input)
+            {
+                return Err(
+                    "candidate belongs to different or stale source inputs; reroute it".into(),
+                );
+            }
+            crate::routing::preserve_copper(&accepted, &mut candidate, &report.selected_nets)?;
+            candidate.snapshot = Some(snapshot.clone());
+            let mut normalized = project.clone();
+            normalized.pcb.routes = candidate.routes.clone();
+            normalized.pcb.vias = candidate.vias.clone();
+            let basic = validate_basic(&normalized, &options.input, &loaded.source);
+            if has_errors(&basic) {
+                diagnostics.extend(basic);
+                return Err("candidate violates source rules".into());
+            }
+            generate_timed(&normalized, &libraries, &mut report.timings_ms)
+                .map_err(|e| e.to_string())?
+                .write_to(&staging, &normalized.project.name)
+                .map_err(|e| e.to_string())?;
+            let start = Instant::now();
+            pcb_drc_timed(
+                &cli,
+                &board,
+                &staging.join("after.json"),
+                false,
+                &mut report.timings_ms,
+            )?;
+            report.after = DrcSummary::read(&staging.join("after.json"))?;
+            report.after.inherit_parity(&report.before);
+            report
+                .timings_ms
+                .insert("candidate_drc".into(), start.elapsed().as_millis() as u64);
+            let (safe, reason) = crate::route_workflow::assess(&report.before, &report.after);
+            report.new_errors =
+                crate::route_workflow::differences(&report.before.errors, &report.after.errors);
+            report.resolved_errors =
+                crate::route_workflow::differences(&report.after.errors, &report.before.errors);
+            report.status = if safe { "accepted" } else { "rejected" }.into();
+            report.reason = reason;
+            crate::route_workflow::write_repair_svg(
+                &staging.join("repair.svg"),
+                &normalized,
+                &report.after,
+            )?;
+            repair_evidence(
+                &repair_context,
+                &board,
+                &staging.join("layers"),
+                &normalized,
+                &report.after.clone(),
+                report,
+            );
+            if safe {
+                write_route_cache(&cache_file, &candidate)?;
+                outcome.cache_file = Some(cache_file.clone());
+            }
+            outcome.exit = if safe
+                && report.after.errors.is_empty()
+                && report.after.opens.is_empty()
+                && !has_errors(&diagnostics)
+            {
+                ExitClass::Success
+            } else {
+                ExitClass::DesignViolations
+            };
+            return Ok(());
+        }
+        let mut state = project.clone();
+        let mut filled_board = board.clone();
+        report.groups = crate::route_workflow::partition_nets(&project, &report.selected_nets);
+        if report
+            .groups
+            .iter()
+            .any(|nets| selected_routing_layers(&project, nets).is_empty())
+        {
+            return Err("selected net has no allowed routing layer".into());
+        }
+        let attempt_key = crate::route_workflow::attempt_key(
+            &routing_input,
+            &accepted,
+            &report.selected_nets,
+            &router,
+            options.timeout_seconds,
+        );
+        let previous: Value = fs::read(run_root.join("latest.json"))
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or(Value::Null);
+        let failures = if previous["attempt_key"] == attempt_key {
+            previous["failures"].as_u64().unwrap_or(0)
+        } else {
+            0
+        };
+        if failures >= 2 && !options.retry {
+            report.status = "blocked".into();
+            return Err("two unchanged attempts made no progress; change source/selection or use --retry to deliberately repeat".into());
+        }
+        let routing_start = Instant::now();
+        let mut progressed = false;
+        let mut router_ms = 0;
+        let mut drc_ms = 0;
+        for (index, nets) in report.groups.clone().into_iter().enumerate() {
+            if !crate::route_workflow::needs_routing(&report.after, &nets) {
+                continue;
+            }
+            let remaining = Duration::from_secs(options.timeout_seconds)
+                .saturating_sub(routing_start.elapsed());
+            if remaining.is_zero() {
+                report.reason = "routing time budget exhausted".into();
+                break;
+            }
+            let group_dir = staging.join(format!("group-{index}"));
+            fs::create_dir(&group_dir).map_err(|e| e.to_string())?;
+            let mut seed = state.clone();
+            for (net, routes) in &mut seed.pcb.routes {
+                if !nets.contains(net) {
+                    for route in routes {
+                        route.locked = true;
+                    }
+                }
+            }
+            for via in &mut seed.pcb.vias {
+                if !nets.contains(&via.net) {
+                    via.locked = true;
+                }
+            }
+            generate_timed(&seed, &libraries, &mut report.timings_ms)
+                .map_err(|e| e.to_string())?
+                .write_to(&group_dir, &seed.project.name)
+                .map_err(|e| e.to_string())?;
+            let input_board = group_dir.join(format!("{}.kicad_pcb", seed.project.name));
+            let fill_start = Instant::now();
+            if serde_json::to_value((&seed.pcb.routes, &seed.pcb.vias)).unwrap()
+                == serde_json::to_value((&state.pcb.routes, &state.pcb.vias)).unwrap()
+            {
+                fs::copy(&filled_board, &input_board).map_err(|e| e.to_string())?;
+            } else {
+                pcb_drc_timed(
+                    &cli,
+                    &input_board,
+                    &group_dir.join("before.json"),
+                    false,
+                    &mut report.timings_ms,
+                )?;
+            }
+            drc_ms += fill_start.elapsed().as_millis() as u64;
+            let initial = footprint_state(&input_board)?;
+            let routed_board = group_dir.join("candidate.kicad_pcb");
+            let fab = group_dir.join("fabrication.txt");
+            let min_width = nets
+                .iter()
+                .filter_map(|n| project.rules.class(n))
+                .map(|c| c.minimum_track_width)
+                .fold(project.rules.minimum_track_width, f64::max);
+            let clearance = nets
+                .iter()
+                .filter_map(|n| project.rules.class(n))
+                .map(|c| c.clearance)
+                .fold(project.rules.clearance, f64::max);
+            fs::write(
+                &fab,
                 format!(
-                    "KiCadRoutingTools failed: {}",
-                    if stderr.is_empty() { stdout } else { stderr }
+                    "track_width = {}\nclearance = {}\nvia_diameter = {}\nvia_drill = {}\n",
+                    min_width, clearance, project.rules.via_size, project.rules.via_drill
                 ),
-                &options.input,
             )
-            .with_help("inspect router output, placement and routing policy"),
-        );
-        return invalid_route(diagnostics, loaded.source);
-    }
-    let router_stdout = String::from_utf8_lossy(&result.stdout);
-    diagnostics.extend(router_summary_diagnostics(&router_stdout, &options.input));
-
-    let routed_state = match footprint_state(&routed_board) {
-        Ok(state) => state,
-        Err(e) => {
-            diagnostics.push(Diagnostic::error("ROUTE021", e, &options.input));
-            return invalid_route(diagnostics, loaded.source);
-        }
-    };
-    if initial_footprints != routed_state {
-        diagnostics.push(Diagnostic::error(
-            "ROUTE019",
-            "router changed footprint placement; placement changes require source edits",
-            &options.input,
-        ));
-        return invalid_route(diagnostics, loaded.source);
-    }
-    if let Err(err) = fs::copy(&routed_board, &input_board) {
-        diagnostics.push(Diagnostic::error(
-            "ROUTE013",
-            format!("cannot stage routed board for validation: {err}"),
-            &options.input,
-        ));
-        return invalid_route(diagnostics, loaded.source);
-    }
-    let router_version = router
-        .parent()
-        .and_then(Path::parent)
-        .map(|root| root.join("VERSION"))
-        .and_then(|path| fs::read_to_string(path).ok())
-        .map(|version| version.trim().to_owned());
-    let mut cache = match extract_route_cache(&routing_input, &input_board, router_version) {
-        Ok(cache) => cache,
-        Err(message) => {
-            diagnostics.push(Diagnostic::error("ROUTE012", message, &options.input));
-            return invalid_route(diagnostics, loaded.source);
-        }
-    };
-
-    if let Err(e) = crate::routing::preserve_copper(&before, &mut cache, &selected_nets) {
-        diagnostics.push(Diagnostic::error("ROUTE020", e, &options.input));
-        return invalid_route(diagnostics, loaded.source);
-    }
-    crate::routing::normalize_cache_order(&mut cache, &routing_input);
-    let mut normalized = routing_input.clone();
-    normalized.pcb.routes = cache.routes.clone();
-    normalized.pcb.vias = cache.vias.clone();
-    let normalized_diagnostics = validate_basic(&normalized, &options.input, &loaded.source);
-    if has_errors(&normalized_diagnostics) {
-        diagnostics.extend(normalized_diagnostics);
-        return invalid_route(diagnostics, loaded.source);
-    }
-    if let Err(e) = generate(&normalized, &libraries)
-        .and_then(|g| g.write_to(staging.path(), &normalized.project.name))
-    {
-        diagnostics.push(Diagnostic::error("GEN001", e.to_string(), &options.input));
-        return invalid_route(diagnostics, loaded.source);
-    }
-    let validation = validate_with_kicad(&cli, staging.path(), &normalized, &options.input);
-    let invalid = validation
-        .iter()
-        .any(|d| d.severity == Severity::Error && d.code.starts_with("KICAD"));
-    diagnostics.extend(validation);
-    if invalid {
-        return invalid_route(diagnostics, loaded.source);
-    }
-    if cache.routes.values().all(Vec::is_empty)
-        && cache.vias.is_empty()
-        && project.nets.values().any(|endpoints| endpoints.len() >= 2)
-    {
-        let summary = router_stdout
-            .lines()
-            .rev()
-            .find(|line| line.starts_with("JSON_SUMMARY_MIN:") || line.starts_with("JSON_SUMMARY:"))
-            .unwrap_or("router produced no machine-readable completion summary");
-        diagnostics.push(
-            Diagnostic::error(
-                "ROUTE015",
-                format!("router returned success but emitted no copper; {summary}"),
-                &options.input,
+            .map_err(|e| e.to_string())?;
+            let mut command = Command::new(&python);
+            command
+                .arg(&router)
+                .arg(&input_board)
+                .arg(&routed_board)
+                .arg("--nets")
+                .args(&nets)
+                .arg("--layers")
+                .args(selected_routing_layers(&project, &nets));
+            command
+                .args(&policy.extra_args)
+                .arg("--fab-overrides")
+                .arg(&fab);
+            let start = Instant::now();
+            let remaining = Duration::from_secs(options.timeout_seconds)
+                .saturating_sub(routing_start.elapsed());
+            let ran = crate::route_workflow::run_router(&mut command, &group_dir, remaining);
+            router_ms += start.elapsed().as_millis() as u64;
+            match ran {
+                Ok(true) if routed_board.is_file() => {}
+                other => {
+                    diagnostics.push(Diagnostic::warning(
+                        "ROUTE011",
+                        format!(
+                            "routing group failed: {other:?}; inspect {}",
+                            group_dir.display()
+                        ),
+                        &options.input,
+                    ));
+                    continue;
+                }
+            }
+            let stdout =
+                fs::read_to_string(group_dir.join("router.stdout.log")).unwrap_or_default();
+            // A partial router summary is evidence, not permission to overwrite the
+            // accepted cache. KiCad's before/after comparison decides promotion.
+            let summary = router_summary_diagnostics(&stdout, &options.input);
+            fs::write(
+                group_dir.join("router-summary.json"),
+                serde_json::to_vec_pretty(&summary).unwrap(),
             )
-            .with_help(
-                "adjust placement/router options; the previous route cache was not replaced",
-            ),
-        );
-        return invalid_route(diagnostics, loaded.source);
-    }
-    let cache_file = match route_cache_path(&options.input, &project) {
-        Ok(path) => path,
-        Err(message) => {
-            diagnostics.push(Diagnostic::error("ROUTE001", message, &options.input));
-            return invalid_route(diagnostics, loaded.source);
+            .map_err(|e| e.to_string())?;
+            if initial != footprint_state(&routed_board)? {
+                return Err("router changed footprint placement".into());
+            }
+            let mut candidate = extract_route_cache(&routing_input, &routed_board, None)?;
+            candidate.snapshot = Some(snapshot.clone());
+            crate::routing::preserve_copper(&accepted, &mut candidate, &nets)?;
+            crate::routing::normalize_cache_order(&mut candidate, &routing_input);
+            write_route_cache(&group_dir.join("candidate.routes.json"), &candidate)?;
+            let mut normalized = state.clone();
+            normalized.pcb.routes = candidate.routes.clone();
+            normalized.pcb.vias = candidate.vias.clone();
+            let basic = validate_basic(&normalized, &options.input, &loaded.source);
+            if has_errors(&basic) {
+                fs::write(
+                    group_dir.join("rejected.json"),
+                    serde_json::to_vec_pretty(&basic).unwrap(),
+                )
+                .map_err(|e| e.to_string())?;
+                diagnostics.push(Diagnostic::warning("ROUTE024", format!("group {index} violates source rules; candidate retained, accepted copper preserved"), &options.input));
+                continue;
+            }
+            let start = Instant::now();
+            let generated_candidate =
+                generate_timed(&normalized, &libraries, &mut report.timings_ms)
+                    .map_err(|e| e.to_string())?;
+            generated_candidate
+                .write_to(&group_dir, &normalized.project.name)
+                .map_err(|e| e.to_string())?;
+            pcb_drc_timed(
+                &cli,
+                &input_board,
+                &group_dir.join("after.json"),
+                false,
+                &mut report.timings_ms,
+            )?;
+            let mut after = DrcSummary::read(&group_dir.join("after.json"))?;
+            after.inherit_parity(&report.before);
+            let validated_cache = crate::route_workflow::drc_cache_path(
+                &run_root,
+                &identity,
+                &project.library_fingerprint,
+                &generated_candidate,
+            );
+            crate::route_workflow::remember_drc(
+                &validated_cache,
+                &input_board,
+                &group_dir.join("after.json"),
+                Some(&staging.join("before.json")),
+            )?;
+            drc_ms += start.elapsed().as_millis() as u64;
+            repair_evidence(
+                &repair_context,
+                &input_board,
+                &group_dir.join("layers"),
+                &normalized,
+                &after,
+                report,
+            );
+            let (accept, reason) = crate::route_workflow::assess(&report.after, &after);
+            fs::write(
+                group_dir.join("decision.json"),
+                serde_json::to_vec_pretty(
+                    &json!({"accepted":accept,"reason":reason,"before":report.after,"after":after}),
+                )
+                .unwrap(),
+            )
+            .map_err(|e| e.to_string())?;
+            if accept {
+                state = normalized;
+                filled_board = input_board.clone();
+                accepted = candidate;
+                report.after = after;
+                progressed = true;
+                if !options.candidate_only {
+                    write_route_cache(&cache_file, &accepted)?;
+                    outcome.cache_file = Some(cache_file.clone());
+                }
+            }
         }
-    };
-    if let Err(message) = write_route_cache(&cache_file, &cache) {
-        diagnostics.push(Diagnostic::error(
-            "ROUTE014",
-            format!("cannot publish routing cache: {message}"),
-            &cache_file,
-        ));
-        return invalid_route(diagnostics, loaded.source);
-    }
-    let design_errors = diagnostics.iter().any(|diag| {
-        diag.severity == Severity::Error && matches!(diag.code.as_str(), "ERC" | "DRC" | "ROUTER")
-    });
-    RouteOutcome {
-        exit: if design_errors {
+        report.timings_ms.insert("router".into(), router_ms);
+        report.timings_ms.insert("group_validation".into(), drc_ms);
+        report.new_errors =
+            crate::route_workflow::differences(&report.before.errors, &report.after.errors);
+        report.resolved_errors =
+            crate::route_workflow::differences(&report.after.errors, &report.before.errors);
+        let complete = !crate::route_workflow::needs_routing(&report.after, &report.selected_nets);
+        if complete && !progressed && !cache_current {
+            // Bootstrapping a cache from authored copper normalizes its segments.
+            // Verify that exact regenerated representation before publishing it.
+            let start = Instant::now();
+            let mut normalized = state.clone();
+            normalized.pcb.routes = accepted.routes.clone();
+            normalized.pcb.vias = accepted.vias.clone();
+            let normalized_dir = staging.join("normalized");
+            let g = generate_timed(&normalized, &libraries, &mut report.timings_ms)
+                .map_err(|e| e.to_string())?;
+            g.write_to(&normalized_dir, &normalized.project.name)
+                .map_err(|e| e.to_string())?;
+            let pcb = normalized_dir.join(format!("{}.kicad_pcb", normalized.project.name));
+            let drc = normalized_dir.join("drc.json");
+            pcb_drc_timed(&cli, &pcb, &drc, false, &mut report.timings_ms)?;
+            let mut normalized_drc = DrcSummary::read(&drc)?;
+            normalized_drc.inherit_parity(&report.before);
+            if let Some(reason) =
+                crate::route_workflow::regression_reason(&report.after, &normalized_drc)
+            {
+                return Err(format!("cache normalization rejected: {reason}"));
+            }
+            let key = crate::route_workflow::drc_cache_path(
+                &run_root,
+                &identity,
+                &project.library_fingerprint,
+                &g,
+            );
+            crate::route_workflow::remember_drc(
+                &key,
+                &pcb,
+                &drc,
+                Some(&staging.join("before.json")),
+            )?;
+            filled_board = pcb;
+            state = normalized;
+            report.after = normalized_drc;
+            report.timings_ms.insert(
+                "normalization_drc".into(),
+                start.elapsed().as_millis() as u64,
+            );
+        }
+
+        report.status = if options.candidate_only {
+            "candidate"
+        } else if progressed {
+            "accepted"
+        } else if complete {
+            "unchanged"
+        } else {
+            "rejected"
+        }
+        .into();
+        report.reason = if complete {
+            "selected nets are connected"
+        } else if progressed {
+            "accepted non-regressing progress; open connections remain"
+        } else {
+            "no measured improvement; inspect group decisions and change geometry or constraints"
+        }
+        .into();
+        write_route_cache(&staging.join("candidate.routes.json"), &accepted)?;
+        if !options.candidate_only && (progressed || complete) {
+            if progressed || !cache_current {
+                write_route_cache(&cache_file, &accepted)?;
+            }
+            outcome.cache_file = Some(cache_file.clone());
+        }
+        repair_evidence(
+            &repair_context,
+            &filled_board,
+            &staging.join("layers"),
+            &state,
+            &report.after.clone(),
+            report,
+        );
+        crate::route_workflow::write_repair_svg(
+            &staging.join("repair.svg"),
+            &state,
+            &report.after,
+        )?;
+        fs::write(run_root.join("latest.json"), serde_json::to_vec_pretty(&json!({"report":outcome.report_file,"attempt_key":attempt_key,"failures":if progressed || complete {0} else {failures+1}})).unwrap()).map_err(|e| e.to_string())?;
+        outcome.exit = if !report.after.errors.is_empty()
+            || !report.after.opens.is_empty()
+            || diagnostics.iter().any(|d| d.severity == Severity::Error)
+        {
             ExitClass::DesignViolations
         } else {
             ExitClass::Success
-        },
-        diagnostics,
-        cache_file: Some(cache_file),
-        source: loaded.source,
+        };
+        Ok(())
+    })();
+    report.new_warnings = crate::route_workflow::differences(
+        &report.before.warning_details,
+        &report.after.warning_details,
+    );
+    report.resolved_warnings = crate::route_workflow::differences(
+        &report.after.warning_details,
+        &report.before.warning_details,
+    );
+    if let Err(e) = result {
+        if report.status.is_empty() {
+            report.status = "invalid".into();
+        }
+        if report.reason.is_empty() {
+            report.reason = e.clone();
+        }
+        diagnostics.push(Diagnostic::error("ROUTE025", e, &options.input));
     }
+    // Publish the report before its index, including blocked and explicit-accept
+    // attempts. Keep the retry counter maintained by the comparison above.
+    let publish_report = (|| -> Result<(), String> {
+        crate::route_workflow::write_json_atomic(outcome.report_file.as_ref().unwrap(), report)?;
+        let latest = run_root.join("latest.json");
+        let mut index: Value = fs::read(&latest)
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .filter(Value::is_object)
+            .unwrap_or(json!({}));
+        index["report"] = json!(outcome.report_file);
+        crate::route_workflow::write_json_atomic(&latest, &index)
+    })();
+    if let Err(e) = publish_report {
+        diagnostics.push(Diagnostic::error("IO001", e, &options.input));
+        outcome.exit = ExitClass::Invalid;
+    }
+    outcome.diagnostics = diagnostics;
+    outcome
 }
 
-fn run(options: &BuildOptions, publish: bool) -> BuildOutcome {
+fn run(options: &BuildOptions, publish: bool, placement_only: bool) -> BuildOutcome {
     let loaded = load_project(&options.input);
     let mut diagnostics = loaded.diagnostics;
     let Some(mut project) = loaded.project else {
@@ -760,7 +1193,7 @@ fn run(options: &BuildOptions, publish: bool) -> BuildOutcome {
         return invalid(diagnostics, loaded.source);
     }
 
-    if project.pcb.routing.is_some() {
+    if project.pcb.routing.is_some() && !placement_only {
         let before_cache = validate_basic(&project, &options.input, &loaded.source);
         if let Err(diagnostic) = apply_route_cache(&mut project, &options.input) {
             diagnostics.push(*diagnostic);
@@ -824,7 +1257,18 @@ fn run(options: &BuildOptions, publish: bool) -> BuildOutcome {
         return invalid(diagnostics, loaded.source);
     }
 
-    let validation = validate_with_kicad(&cli, staging.path(), &project, &options.input);
+    let mut validation = validate_with_kicad(&cli, staging.path(), &project, &options.input);
+    if placement_only {
+        let opens = DrcSummary::read(&staging.path().join("drc.json"))
+            .map(|d| d.opens.len())
+            .unwrap_or(0);
+        validation.retain(|d| !(d.code == "DRC" && d.message.starts_with("unconnected_items:")));
+        validation.push(Diagnostic::warning(
+            "PREVIEW001",
+            format!("unrouted source preview: {opens} open connections; route cache was not used"),
+            &options.input,
+        ));
+    }
     let structural_failure = validation
         .iter()
         .any(|diag| diag.severity == Severity::Error && diag.code.starts_with("KICAD"));
@@ -858,7 +1302,7 @@ fn run(options: &BuildOptions, publish: bool) -> BuildOutcome {
     }
 }
 
-fn validate_with_kicad(
+fn validate_schematic(
     cli: &Path,
     directory: &Path,
     project: &ResolvedProject,
@@ -866,10 +1310,8 @@ fn validate_with_kicad(
 ) -> Vec<Diagnostic> {
     let name = &project.project.name;
     let schematic = directory.join(format!("{name}.kicad_sch"));
-    let pcb = directory.join(format!("{name}.kicad_pcb"));
     let netlist = directory.join(format!("{name}.net"));
     let erc = directory.join("erc.json");
-    let drc = directory.join("drc.json");
     let mut out = Vec::new();
     if let Err(message) = run_command(
         cli,
@@ -921,31 +1363,161 @@ fn validate_with_kicad(
         ));
         return out;
     }
-    if let Err(message) = run_command_extra(
-        cli,
-        &[
-            "pcb",
-            "drc",
-            "--format",
-            "json",
-            "--severity-all",
-            "--schematic-parity",
-            "--refill-zones",
-            "--save-board",
-            "--output",
-        ],
-        Some(&drc),
-        &pcb,
-    ) {
-        out.push(Diagnostic::error(
-            "KICAD004",
-            format!("KiCad rejected generated PCB: {message}"),
-            &pcb,
-        ));
+    out.extend(read_kicad_report(&erc, source_file, "ERC"));
+    out
+}
+
+fn validate_schematic_cached(
+    cli: &Path,
+    directory: &Path,
+    cache_dir: &Path,
+    project: &ResolvedProject,
+    source_file: &Path,
+    generated: &crate::kicad::GeneratedProject,
+    identity: &Value,
+) -> Vec<Diagnostic> {
+    use sha2::{Digest, Sha256};
+    let key = format!(
+        "{:x}",
+        Sha256::digest(
+            serde_json::to_vec(&json!([
+                generated.schematic,
+                generated.sheets,
+                project.nets,
+                project.components,
+                project.library_fingerprint,
+                identity,
+                env!("CARGO_PKG_VERSION")
+            ]))
+            .unwrap()
+        )
+    );
+    let path = cache_dir.join(format!("schematic-{key}.json"));
+    if let Ok(bytes) = fs::read(&path)
+        && let Ok(result) = serde_json::from_slice::<Vec<Diagnostic>>(&bytes)
+    {
+        return result;
+    }
+    let result = validate_schematic(cli, directory, project, source_file);
+    if !has_errors(&result) {
+        let _ = fs::write(path, serde_json::to_vec(&result).unwrap());
+    }
+    result
+}
+
+fn repair_evidence(
+    context: &crate::route_workflow::RepairContext<'_>,
+    board: &Path,
+    directory: &Path,
+    project: &ResolvedProject,
+    summary: &DrcSummary,
+    report: &mut RouteReport,
+) {
+    if summary.errors.is_empty() && summary.opens.is_empty() && summary.warning_details.is_empty() {
+        return;
+    }
+    let start = Instant::now();
+    match crate::route_workflow::native_repair_views(context, board, directory, project, summary) {
+        Ok(_) => report
+            .repair_views
+            .push(directory.join("index.html").display().to_string()),
+        Err(e) => report
+            .artifact_errors
+            .push(format!("{}: {e}", directory.display())),
+    }
+    *report.timings_ms.entry("repair_views".into()).or_default() +=
+        start.elapsed().as_millis() as u64;
+}
+
+fn generate_timed(
+    project: &ResolvedProject,
+    libraries: &crate::library::ResolvedLibraries,
+    timings: &mut std::collections::BTreeMap<String, u64>,
+) -> Result<crate::kicad::GeneratedProject, std::io::Error> {
+    let start = Instant::now();
+    let result = generate(project, libraries);
+    *timings.entry("generation".into()).or_default() += start.elapsed().as_millis() as u64;
+    result
+}
+
+fn pcb_drc_timed(
+    cli: &Path,
+    pcb: &Path,
+    report: &Path,
+    parity: bool,
+    timings: &mut std::collections::BTreeMap<String, u64>,
+) -> Result<(), String> {
+    let start = Instant::now();
+    let filled = crate::route_workflow::fill_zones(cli, pcb)?;
+    let fill_phase = if filled {
+        "zone_fill"
+    } else {
+        "fill_backend_lookup"
+    };
+    *timings.entry(fill_phase.into()).or_default() += start.elapsed().as_millis() as u64;
+    let start = Instant::now();
+    let mut args = vec![
+        "pcb",
+        "drc",
+        "--format",
+        "json",
+        "--severity-all",
+        "--save-board",
+    ];
+    if !filled {
+        args.push("--refill-zones");
+    }
+    if parity {
+        args.push("--schematic-parity");
+    }
+    args.push("--output");
+    let result = run_command_extra(cli, &args, Some(report), pcb);
+    let phase = if filled {
+        "pcb_validation"
+    } else {
+        "combined_fill_validation"
+    };
+    *timings.entry(phase.into()).or_default() += start.elapsed().as_millis() as u64;
+    result
+}
+
+fn pcb_drc(cli: &Path, pcb: &Path, report: &Path, parity: bool) -> Result<(), String> {
+    let mut args = vec![
+        "pcb",
+        "drc",
+        "--format",
+        "json",
+        "--severity-all",
+        "--refill-zones",
+        "--save-board",
+    ];
+    if parity {
+        args.push("--schematic-parity");
+    }
+    args.push("--output");
+    run_command_extra(cli, &args, Some(report), pcb)
+}
+
+fn validate_with_kicad(
+    cli: &Path,
+    directory: &Path,
+    project: &ResolvedProject,
+    source_file: &Path,
+) -> Vec<Diagnostic> {
+    let mut out = validate_schematic(cli, directory, project, source_file);
+    if out
+        .iter()
+        .any(|d| d.severity == Severity::Error && d.code.starts_with("KICAD"))
+    {
         return out;
     }
-    out.extend(read_kicad_report(&erc, source_file, "ERC"));
-    out.extend(read_kicad_report(&drc, source_file, "DRC"));
+    let pcb = directory.join(format!("{}.kicad_pcb", project.project.name));
+    let drc = directory.join("drc.json");
+    if let Err(message) = pcb_drc(cli, &pcb, &drc, true) {
+        out.push(Diagnostic::error("KICAD004", message, source_file));
+    } else {
+        out.extend(read_kicad_report(&drc, source_file, "DRC"));
+    }
     out
 }
 
@@ -1252,6 +1824,8 @@ fn invalid_route(diagnostics: Vec<Diagnostic>, source: String) -> RouteOutcome {
         exit: ExitClass::Invalid,
         diagnostics,
         cache_file: None,
+        report_file: None,
+        report: RouteReport::default(),
         source,
     }
 }
@@ -1311,6 +1885,39 @@ fn schema_with_id(mut schema: Value, id: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn router_layers_follow_selected_net_class_intersection() {
+        let mut project: ResolvedProject =
+            serde_json::from_str(include_str!("../testdata/resolved/two-resistors.kil.json"))
+                .unwrap();
+        project.pcb.stackup.layers = 4;
+        project.rules.net_classes.insert(
+            "front-only".into(),
+            crate::model::NetClass {
+                nets: vec!["SIGNAL".into()],
+                clearance: 0.15,
+                minimum_track_width: 0.15,
+                preferred_track_width: 0.25,
+                allowed_layers: vec!["F.Cu".into()],
+                zone_layers: None,
+                allow_through_vias: None,
+            },
+        );
+
+        assert_eq!(
+            selected_routing_layers(&project, &["SIGNAL".into()]),
+            ["F.Cu"]
+        );
+        assert_eq!(
+            selected_routing_layers(&project, &["GND".into()]),
+            ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]
+        );
+        assert_eq!(
+            selected_routing_layers(&project, &["SIGNAL".into(), "GND".into()]),
+            ["F.Cu"]
+        );
+    }
 
     #[test]
     fn placement_state_rejects_bad_boards_and_ignores_order() {

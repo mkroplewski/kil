@@ -101,7 +101,7 @@ impl Context<'_> {
                 }
                 Ok(add(
                     placement.at,
-                    rotate(add(local, a.offset), placement.rotation),
+                    rotate(add(local, a.offset), -placement.rotation),
                 ))
             }
             Anchor::Edge(a) => {
@@ -417,6 +417,34 @@ mod tests {
         }
         assert!(resolve_layout(&mut project, &[plan], &libraries, true).is_empty());
         assert_eq!(project.pcb.routes["SIGNAL"][0].path[0][0], x + 1.);
+    }
+
+    #[test]
+    fn pad_routes_follow_front_footprint_rotation() {
+        let (mut project, mut plan, libraries) = setup();
+        plan.design.placement["R1"].rotation = 90.;
+        plan.design.routes.clear();
+        plan.design.routes.insert(
+            "SIGNAL".into(),
+            vec![RouteIntent {
+                layer: "F.Cu".into(),
+                width: None,
+                locked: true,
+                path: vec![
+                    Anchor::Pad(PadAnchor {
+                        pad: "R1.1".into(),
+                        offset: [0., 0.],
+                    }),
+                    Anchor::Pad(PadAnchor {
+                        pad: "R2.1".into(),
+                        offset: [0., 0.],
+                    }),
+                ],
+            }],
+        );
+
+        assert!(resolve_layout(&mut project, &[plan], &libraries, true).is_empty());
+        assert_eq!(project.pcb.routes["SIGNAL"][0].path[0], [5., 5.825]);
     }
     #[test]
     fn relative_placement_rotates_offsets_and_rejects_cycles() {

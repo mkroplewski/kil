@@ -349,8 +349,25 @@ pub struct NetClass {
     pub preferred_track_width: f64,
     #[serde(default)]
     pub allowed_layers: Vec<String>,
+    /// Override allowed_layers for copper pours. Empty explicitly permits every layer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zone_layers: Option<Vec<String>>,
+    /// Override the default through-via policy, which requires both outer track layers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_through_vias: Option<bool>,
 }
 impl NetClass {
+    pub fn allows_zone(&self, layer: &str) -> bool {
+        self.zone_layers.as_ref().map_or_else(
+            || self.allows(layer),
+            |layers| layers.is_empty() || layers.iter().any(|l| l == layer),
+        )
+    }
+    pub fn allows_vias(&self) -> bool {
+        self.allow_through_vias
+            .unwrap_or_else(|| self.allows("F.Cu") && self.allows("B.Cu"))
+    }
+
     pub fn allows(&self, layer: &str) -> bool {
         self.allowed_layers.is_empty() || self.allowed_layers.iter().any(|l| l == layer)
     }

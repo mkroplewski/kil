@@ -19,6 +19,9 @@ pub struct RouteCache {
     pub format_version: u32,
     pub project: String,
     pub input_fingerprint: String,
+    /// Source inputs used to invalidate copper safely after placement edits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<serde_json::Value>,
     pub engine: RouterIdentity,
     pub routes: IndexMap<String, Vec<Route>>,
     pub vias: Vec<Via>,
@@ -32,11 +35,16 @@ pub struct RouterIdentity {
     pub version: Option<String>,
 }
 
+/// Fingerprint of routing inputs for cache validity.
+///
+/// Pre-upgrade `*.routes.json` files used an older recipe (without per-component
+/// footprint IDs). After upgrading, `kil check` / `kil build` report `ROUTE006`
+/// until a one-time `kil route` regenerates the cache under this recipe.
 pub fn routing_fingerprint(project: &ResolvedProject) -> String {
     let encoded = serde_json::to_vec(&serde_json::json!({
         "compiler": env!("CARGO_PKG_VERSION"),
         "library_fingerprint": project.library_fingerprint,
-        "nets": project.nets, "pcb": project.pcb, "rules": project.rules,
+        "footprints": project.components.iter().map(|(id,c)| (id, &c.footprint)).collect::<BTreeMap<_,_>>(), "nets": project.nets, "pcb": project.pcb, "rules": project.rules,
     }))
     .expect("routing inputs are serializable");
     let mut hasher = Sha256::new();
@@ -209,6 +217,7 @@ pub fn extract_route_cache(
         format_version: 2,
         project: project.project.name.clone(),
         input_fingerprint: routing_fingerprint(project),
+        snapshot: None,
         engine: RouterIdentity {
             name: "kicad-routing-tools".into(),
             version: engine_version,
@@ -457,13 +466,13 @@ fn walk_polyline(
 }
 
 #[derive(Debug, Clone, Copy)]
-struct BoardFrame {
+pub(crate) struct BoardFrame {
     min_x: f64,
     max_y: f64,
 }
 
 impl BoardFrame {
-    fn new(outline: &[[f64; 2]]) -> Self {
+    pub(crate) fn new(outline: &[[f64; 2]]) -> Self {
         Self {
             min_x: outline
                 .iter()
@@ -476,7 +485,11 @@ impl BoardFrame {
         }
     }
 
-    fn unmap(self, point: [f64; 2]) -> [f64; 2] {
+    pub(crate) fn map(self, point: [f64; 2]) -> [f64; 2] {
+        [point[0] - self.min_x + 20.0, self.max_y - point[1] + 20.0]
+    }
+
+    pub(crate) fn unmap(self, point: [f64; 2]) -> [f64; 2] {
         [
             round_mm(self.min_x + point[0] - 20.0),
             round_mm(self.max_y - (point[1] - 20.0)),
@@ -587,6 +600,7 @@ mod tests {
             format_version: 2,
             project: project.project.name.clone(),
             input_fingerprint: routing_fingerprint(&project),
+            snapshot: None,
             engine: RouterIdentity {
                 name: "test".into(),
                 version: None,
@@ -746,6 +760,7 @@ mod tests {
             format_version: 2,
             project: project.project.name.clone(),
             input_fingerprint: "stale".into(),
+            snapshot: None,
             engine: RouterIdentity {
                 name: "kicad-routing-tools".into(),
                 version: None,

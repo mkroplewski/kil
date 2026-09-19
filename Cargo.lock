@@ -297,6 +297,7 @@ dependencies = [
  "indexmap",
  "kiutils_kicad",
  "kiutils_sexpr",
+ "libc",
  "schemars",
  "serde",
  "serde_json",
@@ -323,6 +324,7 @@ version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c55b236882739e72e7d3eb9d006cd9aefe9f3545ee449fcf585de760f896d8d7"
 dependencies = [
+ "serde",
  "thiserror",
 ]
 

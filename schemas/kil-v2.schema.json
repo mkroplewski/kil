@@ -296,6 +296,13 @@
     "NetClass": {
       "additionalProperties": false,
       "properties": {
+        "allow_through_vias": {
+          "description": "Override the default through-via policy, which requires both outer track layers.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "allowed_layers": {
           "default": [],
           "items": {
@@ -320,6 +327,16 @@
         "preferred_track_width": {
           "format": "double",
           "type": "number"
+        },
+        "zone_layers": {
+          "description": "Override allowed_layers for copper pours. Empty explicitly permits every layer.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
         }
       },
       "required": [
